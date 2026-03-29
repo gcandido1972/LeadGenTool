@@ -1447,8 +1447,7 @@ function getField(row, ...keys) {
 }
 
 function extractCompanyFromPocBrief(pocBrief) {
-  // POC Brief always starts with "COMPANY: Leneo
-DOMAIN: ..."
+  // POC Brief starts with "COMPANY: Name\nDOMAIN: ..."
   const m = pocBrief.match(/COMPANY:\s*([^\n]+)/i);
   return m ? m[1].trim() : '';
 }
