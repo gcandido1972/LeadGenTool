@@ -873,10 +873,27 @@
   </div>
 
   <div style="margin-top:32px;padding-top:24px;border-top:1px solid var(--border);">
-    <div class="config-label" style="margin-bottom:12px;">Import leads (JSON)</div>
-    <div class="config-note" style="margin-bottom:10px;">Paste a JSON array of lead objects exported from Clay. Each object needs: name, company, email, score, tier, employees, auditMessage, linkedinUrl (optional), status (optional).</div>
-    <textarea class="config-input" id="json-import-area" rows="6" placeholder='[{"name":"John Smith","company":"Acme","email":"john@acme.com","score":9,"tier":1,"employees":32,"auditMessage":"Your GTM positioning..."}]' style="resize:vertical;line-height:1.5;font-size:11px;"></textarea>
-    <button class="btn btn-ghost" style="width:100%;margin-top:8px;" onclick="importJSON()">↓ Import leads</button>
+    <div class="config-label" style="margin-bottom:12px;">Import leads</div>
+
+    <!-- Format tabs -->
+    <div style="display:flex;gap:2px;margin-bottom:12px;">
+      <button id="tab-csv-btn" onclick="switchImportTab('csv')" style="flex:1;padding:6px;font-size:11px;font-family:'DM Mono',monospace;cursor:pointer;border:1px solid var(--accent-border);border-radius:var(--radius) 0 0 var(--radius);background:var(--accent-dim);color:var(--accent);">CSV (Clay export)</button>
+      <button id="tab-json-btn" onclick="switchImportTab('json')" style="flex:1;padding:6px;font-size:11px;font-family:'DM Mono',monospace;cursor:pointer;border:1px solid var(--border);border-radius:0 var(--radius) var(--radius) 0;background:transparent;color:var(--text-3);">JSON</button>
+    </div>
+
+    <!-- CSV panel -->
+    <div id="import-csv-panel">
+      <div class="config-note" style="margin-bottom:8px;">Paste the CSV exported directly from Clay. Column mapping is automatic.</div>
+      <textarea class="config-input" id="csv-import-area" rows="7" placeholder="Paste Clay CSV export here..." style="resize:vertical;line-height:1.5;font-size:10px;"></textarea>
+      <button class="btn btn-accent" style="width:100%;margin-top:8px;" onclick="importCSV()">↓ Import CSV</button>
+    </div>
+
+    <!-- JSON panel -->
+    <div id="import-json-panel" style="display:none;">
+      <div class="config-note" style="margin-bottom:8px;">Paste a JSON array of lead objects.</div>
+      <textarea class="config-input" id="json-import-area" rows="7" placeholder='[{"name":"John Smith","company":"Acme","email":"john@acme.com",...}]' style="resize:vertical;line-height:1.5;font-size:10px;"></textarea>
+      <button class="btn btn-ghost" style="width:100%;margin-top:8px;" onclick="importJSON()">↓ Import JSON</button>
+    </div>
   </div>
 </div>
 
@@ -1320,6 +1337,128 @@ function composeReply(id) {
 function dismissReply(id) {
   replies = replies.filter(r => r.id !== id);
   renderReplies();
+}
+
+// ── IMPORT TAB TOGGLE ──
+function switchImportTab(tab) {
+  const csvPanel  = document.getElementById('import-csv-panel');
+  const jsonPanel = document.getElementById('import-json-panel');
+  const csvBtn    = document.getElementById('tab-csv-btn');
+  const jsonBtn   = document.getElementById('tab-json-btn');
+  if (tab === 'csv') {
+    csvPanel.style.display  = 'block';
+    jsonPanel.style.display = 'none';
+    csvBtn.style.background  = 'var(--accent-dim)';
+    csvBtn.style.color       = 'var(--accent)';
+    csvBtn.style.borderColor = 'var(--accent-border)';
+    jsonBtn.style.background = 'transparent';
+    jsonBtn.style.color      = 'var(--text-3)';
+    jsonBtn.style.borderColor= 'var(--border)';
+  } else {
+    csvPanel.style.display  = 'none';
+    jsonPanel.style.display = 'block';
+    jsonBtn.style.background  = 'var(--accent-dim)';
+    jsonBtn.style.color       = 'var(--accent)';
+    jsonBtn.style.borderColor = 'var(--accent-border)';
+    csvBtn.style.background  = 'transparent';
+    csvBtn.style.color       = 'var(--text-3)';
+    csvBtn.style.borderColor = 'var(--border)';
+  }
+}
+
+// ── CSV PARSER ──
+function parseCSV(text) {
+  const lines = text.trim().split(/\r?\n/);
+  if (lines.length < 2) return [];
+
+  // Parse a single CSV line respecting quoted fields
+  function parseLine(line) {
+    const fields = [];
+    let cur = '', inQ = false;
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i];
+      if (ch === '"') {
+        if (inQ && line[i+1] === '"') { cur += '"'; i++; }
+        else inQ = !inQ;
+      } else if (ch === ',' && !inQ) {
+        fields.push(cur); cur = '';
+      } else {
+        cur += ch;
+      }
+    }
+    fields.push(cur);
+    return fields;
+  }
+
+  const headers = parseLine(lines[0]).map(h => h.trim());
+  const rows = [];
+  for (let i = 1; i < lines.length; i++) {
+    if (!lines[i].trim()) continue;
+    const vals = parseLine(lines[i]);
+    const obj = {};
+    headers.forEach((h, idx) => { obj[h] = (vals[idx] || '').trim(); });
+    rows.push(obj);
+  }
+  return rows;
+}
+
+// ── Clay column name → dashboard field mapping ──
+function mapClayRow(row) {
+  // Helper: try multiple possible column names
+  const get = (...keys) => {
+    for (const k of keys) {
+      const val = row[k] || row[k.toLowerCase()] || '';
+      if (val && val !== 'N/A' && val !== 'None') return val;
+    }
+    return '';
+  };
+
+  const tierRaw = get('ICP Target', 'ICP_Target', 'tier', 'Tier');
+  const tier = tierRaw.includes('1') ? 1 : tierRaw.includes('2') ? 2 : 1;
+
+  const company = get(
+    'Privately Held B2B SaaS Companies Europe US',
+    'Company', 'company', 'companyName', 'Company Name'
+  );
+
+  return {
+    id:                uid(),
+    name:              get('Fullname - People', 'Full Name', 'Fullname', 'name', 'ceoName', 'CEO Name'),
+    company:           company,
+    email:             get('Work Email', 'Email', 'email', 'ceoEmail', 'CEO Email'),
+    score:             tier === 1 ? 9 : 7,
+    tier,
+    employees:         parseInt(get('Employees', 'headcount', 'employees')) || 0,
+    linkedinUrl:       get('LinkedIn URL', 'linkedin_url', 'linkedinUrl', 'CEO LinkedIn'),
+    pocBrief:          get('POC Brief', 'poc_brief', 'pocBrief'),
+    pocStrategic:      get('POC Strategic Summary TEXT', 'poc_strategic', 'pocStrategic', 'POC Strategic Summary'),
+    ceoPainPoints:     get('CEO Pain Point Research TEXT', 'ceo_pain_points', 'ceoPainPoints', 'Pain Point Hypothesis'),
+    linkedinSummary:   get('LinkedIn Post Summary TEXT', 'linkedin_summary', 'linkedinSummary', 'LinkedIn Post Summary'),
+    founderChallenges: get('TEXT Founder Recent Challenges Post', 'founder_challenges', 'founderChallenges'),
+    auditMessage:      get('auditMessage', 'audit_message', 'researchSummary'),
+    status:            'pending',
+    checked:           false
+  };
+}
+
+function importCSV() {
+  const raw = document.getElementById('csv-import-area').value.trim();
+  if (!raw) { toast('Paste Clay CSV first', 'error'); return; }
+  try {
+    const rows = parseCSV(raw);
+    if (!rows.length) throw new Error('No rows found');
+    const mapped = rows
+      .map(mapClayRow)
+      .filter(l => l.name && l.email);
+    if (!mapped.length) throw new Error('No valid leads found — check email and name columns');
+    leads = [...leads, ...mapped];
+    renderAll();
+    toggleConfig();
+    document.getElementById('csv-import-area').value = '';
+    toast(`Imported ${mapped.length} leads from CSV`, 'success');
+  } catch(e) {
+    toast('CSV error: ' + e.message, 'error');
+  }
 }
 
 // ── IMPORT ──
