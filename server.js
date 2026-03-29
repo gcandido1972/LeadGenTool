@@ -293,10 +293,16 @@ async function sendEmail(data, emailBody, pdfUrl, recipientEmail, subjectPrefix 
   const from    = process.env.SMTP_FROM || 'contact@omegapraxis.com';
   const subject = `${subjectPrefix}Growth brief for ${data.company} — Omega Praxis`;
 
-  // Convert plain text paragraphs to HTML paragraphs
-  const bodyHtml = emailBody
+  // Convert plain text to HTML — strip the "Book your call" line since we handle it as a button
+  const cleanBody = emailBody
+    .replace(/Book your call.*tidycal\.com\/gianni3\/discovery-call/gi, '')
+    .trim();
+
+  const bodyHtml = cleanBody
     .split(/\n\n+/)
-    .map(p => `<p style="margin:0 0 16px 0;line-height:1.6;">${p.replace(/\n/g, '<br>')}</p>`)
+    .map(p => p.trim())
+    .filter(p => p.length > 0)
+    .map(p => `<p style="margin:0 0 18px 0;line-height:1.7;font-size:15px;color:#1a1a1a;">${p.replace(/\n/g, '<br>')}</p>`)
     .join('');
 
   const html = `<!DOCTYPE html>
@@ -306,17 +312,44 @@ async function sendEmail(data, emailBody, pdfUrl, recipientEmail, subjectPrefix 
   <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#ffffff;">
     <tr>
       <td align="center" style="padding:40px 20px;">
-        <table width="560" cellpadding="0" cellspacing="0" border="0" style="max-width:560px;width:100%;">
+        <table width="580" cellpadding="0" cellspacing="0" border="0" style="max-width:580px;width:100%;">
 
           <!-- EMAIL BODY -->
           <tr>
-            <td style="font-family:Georgia,serif;font-size:15px;color:#1a1a1a;padding-bottom:32px;">
+            <td style="padding-bottom:28px;">
               ${bodyHtml}
-              <p style="margin:0 0 16px 0;line-height:1.6;">
-                <a href="${pdfUrl}" style="color:#4a7c4e;font-family:Georgia,serif;">
-                  → Download your strategy brief
-                </a>
-              </p>
+            </td>
+          </tr>
+
+          <!-- CTA BLOCK — hierarchy: 1. Download brief  2. Book call -->
+          <tr>
+            <td style="padding-bottom:36px;">
+              <table cellpadding="0" cellspacing="0" border="0">
+
+                <!-- PRIMARY CTA: Download brief -->
+                <tr>
+                  <td style="padding-bottom:12px;">
+                    <a href="${pdfUrl}"
+                       style="display:inline-block;background:#3b82f6;color:#ffffff;font-family:Arial,sans-serif;font-size:14px;font-weight:bold;padding:13px 28px;text-decoration:none;border-radius:4px;letter-spacing:0.02em;">
+                      ↓ &nbsp;Download your strategy brief
+                    </a>
+                  </td>
+                </tr>
+
+                <!-- SECONDARY CTA: Book call -->
+                <tr>
+                  <td>
+                    <p style="margin:0;font-family:Arial,sans-serif;font-size:13px;color:#6a6a6a;">
+                      The next step? A 30-minute conversation. &nbsp;
+                      <a href="https://tidycal.com/gianni3/discovery-call"
+                         style="color:#2563eb;font-weight:bold;text-decoration:underline;">
+                        Book your call →
+                      </a>
+                    </p>
+                  </td>
+                </tr>
+
+              </table>
             </td>
           </tr>
 
@@ -328,31 +361,31 @@ async function sendEmail(data, emailBody, pdfUrl, recipientEmail, subjectPrefix 
               <table cellpadding="0" cellspacing="0" border="0" width="100%">
                 <tr>
                   <!-- Portrait -->
-                  <td width="72" valign="top" style="padding-right:16px;">
+                  <td width="80" valign="top" style="padding-right:16px;">
                     <img src="https://firebasestorage.googleapis.com/v0/b/devgurucatdb.firebasestorage.app/o/portrait_sign_email.png?alt=media"
                          width="64" height="64"
                          alt="Gianni Candido"
                          style="border-radius:50%;width:64px;height:64px;object-fit:cover;display:block;">
                   </td>
-                  <!-- Text -->
+                  <!-- Sig text -->
                   <td valign="top">
                     <p style="margin:0 0 3px 0;font-family:Arial,sans-serif;font-size:13px;font-weight:bold;color:#1a1a1a;letter-spacing:0.08em;">
                       GIANNI CANDIDO &nbsp;|&nbsp; FOUNDER
                     </p>
-                    <p style="margin:0 0 6px 0;font-family:Arial,sans-serif;font-size:11px;color:#4a4a4a;font-weight:bold;">
+                    <p style="margin:0 0 5px 0;font-family:Arial,sans-serif;font-size:11px;color:#4a4a4a;font-weight:bold;">
                       OMEGA PRAXIS — AI POWERED STRATEGIC GROWTH PLATFORM
                     </p>
-                    <p style="margin:0 0 6px 0;font-family:Arial,sans-serif;font-size:11px;color:#6a6a6a;line-height:1.5;">
+                    <p style="margin:0 0 5px 0;font-family:Arial,sans-serif;font-size:11px;color:#6a6a6a;line-height:1.5;">
                       Grow Your Business &nbsp;|&nbsp; Get More Clients &nbsp;|&nbsp; Find Your Business Partners
                     </p>
-                    <p style="margin:0 0 4px 0;font-family:Arial,sans-serif;font-size:11px;color:#4a4a4a;">
+                    <p style="margin:0 0 6px 0;font-family:Arial,sans-serif;font-size:11px;color:#4a4a4a;">
                       <a href="https://www.omegapraxis.com" style="color:#4a4a4a;text-decoration:none;">www.omegapraxis.com</a>
                       &nbsp;&nbsp;0032 (0) 485 83 05 34
-                      &nbsp;&nbsp;<a href="https://www.linkedin.com/in/giannicandido" style="color:#0077b5;text-decoration:none;font-weight:bold;">LinkedIn</a>
+                      &nbsp;&nbsp;<a href="https://www.linkedin.com/in/giannicandido" style="color:#0077b5;font-weight:bold;text-decoration:none;">LinkedIn</a>
                     </p>
-                    <p style="margin:6px 0 0 0;font-family:Arial,sans-serif;font-size:11px;">
+                    <p style="margin:0;font-family:Arial,sans-serif;font-size:11px;">
                       <a href="https://tidycal.com/gianni3/discovery-call"
-                         style="color:#ffffff;background:#1a1a1a;padding:5px 12px;text-decoration:none;font-weight:bold;font-size:11px;letter-spacing:0.06em;display:inline-block;">
+                         style="color:#ffffff;background:#1a1a1a;padding:5px 14px;text-decoration:none;font-weight:bold;font-size:11px;letter-spacing:0.06em;display:inline-block;">
                         BOOK A MEETING WITH ME
                       </a>
                     </p>
