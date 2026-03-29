@@ -1,6 +1,6 @@
 {
   "name": "omega-praxis-webhook",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "description": "Clay → Claude → PDF brief → Email. No browser dependencies.",
   "type": "module",
   "main": "server.js",
@@ -9,7 +9,7 @@
     "dev": "node --watch server.js"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.24.0",
+    "@anthropic-ai/sdk": "^0.30.0",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
     "nodemailer": "^6.9.13",
