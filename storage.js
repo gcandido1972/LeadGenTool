@@ -87,8 +87,9 @@ export async function uploadPdf(pdfBuffer, filename) {
   // Make file publicly readable by patching IAM
   await setPublicRead(token, encodedPath);
 
-  // Public download URL — works for both appspot.com and firebasestorage.app
-  const downloadUrl = `${PUBLIC_BASE}/${storagePath}`;
+  // Firebase Storage public URL — works with storage rules allow read: if true
+  const encodedForUrl = encodeURIComponent(storagePath);
+  const downloadUrl   = `${FIREBASE_BASE}/${encodedForUrl}?alt=media`;
 
   return { downloadUrl, storagePath };
 }
