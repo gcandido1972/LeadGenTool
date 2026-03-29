@@ -1,0 +1,21 @@
+{
+  "name": "omega-praxis-webhook",
+  "version": "1.0.0",
+  "description": "Clay → Claude → PDF brief → Email webhook for Omega Praxis",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.24.0",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "nodemailer": "^6.9.13",
+    "puppeteer": "^22.11.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}
