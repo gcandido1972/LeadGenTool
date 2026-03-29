@@ -276,7 +276,7 @@ Rules:
 - Founder-to-founder tone. Formal but direct. No filler, no corporate pleasantries.
 - 3 short paragraphs only.
 - Para 1: One specific observation about their current growth challenge — name something precise from the data above.
-- Para 2: One sentence on what the attached strategy brief contains and why it is specifically relevant to them.
+- Para 2: One sentence on what the strategy brief (linked below) contains and why it is specifically relevant to them. Never use the word "attached" — the brief is shared as a download link, not an attachment.
 - Para 3: "The next step? A 30-minute conversation." followed by a new line with: Book your call → https://tidycal.com/gianni3/discovery-call
 - Sign off: Gianni Candido / Founder, Omega Praxis
 - Return ONLY the email body. No subject line. No HTML. Plain text with line breaks.`
@@ -285,7 +285,7 @@ Rules:
   return msg.content[0].text;
 }
 
-// ── Resend HTTP API — sends link, no attachment ───────────────
+// ── Resend HTTP API — HTML email with signature ──────────────
 async function sendEmail(data, emailBody, pdfUrl, recipientEmail, subjectPrefix = '') {
   const apiKey = process.env.RESEND_API_KEY;
   if (!apiKey) throw new Error('RESEND_API_KEY not set');
@@ -293,8 +293,85 @@ async function sendEmail(data, emailBody, pdfUrl, recipientEmail, subjectPrefix 
   const from    = process.env.SMTP_FROM || 'contact@omegapraxis.com';
   const subject = `${subjectPrefix}Growth brief for ${data.company} — Omega Praxis`;
 
-  // Append PDF download link to email body
-  const fullBody = `${emailBody}\n\n---\nYour strategy brief is ready to download:\n${pdfUrl}`;
+  // Convert plain text paragraphs to HTML paragraphs
+  const bodyHtml = emailBody
+    .split(/\n\n+/)
+    .map(p => `<p style="margin:0 0 16px 0;line-height:1.6;">${p.replace(/\n/g, '<br>')}</p>`)
+    .join('');
+
+  const html = `<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#ffffff;font-family:Georgia,serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#ffffff;">
+    <tr>
+      <td align="center" style="padding:40px 20px;">
+        <table width="560" cellpadding="0" cellspacing="0" border="0" style="max-width:560px;width:100%;">
+
+          <!-- EMAIL BODY -->
+          <tr>
+            <td style="font-family:Georgia,serif;font-size:15px;color:#1a1a1a;padding-bottom:32px;">
+              ${bodyHtml}
+              <p style="margin:0 0 16px 0;line-height:1.6;">
+                <a href="${pdfUrl}" style="color:#4a7c4e;font-family:Georgia,serif;">
+                  → Download your strategy brief
+                </a>
+              </p>
+            </td>
+          </tr>
+
+          <!-- DIVIDER -->
+          <tr>
+            <td style="border-top:1px solid #e0ddd8;padding-top:24px;">
+
+              <!-- SIGNATURE -->
+              <table cellpadding="0" cellspacing="0" border="0" width="100%">
+                <tr>
+                  <!-- Portrait -->
+                  <td width="72" valign="top" style="padding-right:16px;">
+                    <img src="https://firebasestorage.googleapis.com/v0/b/devgurucatdb.firebasestorage.app/o/portrait_sign_email.png?alt=media"
+                         width="64" height="64"
+                         alt="Gianni Candido"
+                         style="border-radius:50%;width:64px;height:64px;object-fit:cover;display:block;">
+                  </td>
+                  <!-- Text -->
+                  <td valign="top">
+                    <p style="margin:0 0 3px 0;font-family:Arial,sans-serif;font-size:13px;font-weight:bold;color:#1a1a1a;letter-spacing:0.08em;">
+                      GIANNI CANDIDO &nbsp;|&nbsp; FOUNDER
+                    </p>
+                    <p style="margin:0 0 6px 0;font-family:Arial,sans-serif;font-size:11px;color:#4a4a4a;font-weight:bold;">
+                      OMEGA PRAXIS — AI POWERED STRATEGIC GROWTH PLATFORM
+                    </p>
+                    <p style="margin:0 0 6px 0;font-family:Arial,sans-serif;font-size:11px;color:#6a6a6a;line-height:1.5;">
+                      Grow Your Business &nbsp;|&nbsp; Get More Clients &nbsp;|&nbsp; Find Your Business Partners
+                    </p>
+                    <p style="margin:0 0 4px 0;font-family:Arial,sans-serif;font-size:11px;color:#4a4a4a;">
+                      <a href="https://www.omegapraxis.com" style="color:#4a4a4a;text-decoration:none;">www.omegapraxis.com</a>
+                      &nbsp;&nbsp;0032 (0) 485 83 05 34
+                      &nbsp;&nbsp;<a href="https://www.linkedin.com/in/giannicandido" style="color:#0077b5;text-decoration:none;font-weight:bold;">LinkedIn</a>
+                    </p>
+                    <p style="margin:6px 0 0 0;font-family:Arial,sans-serif;font-size:11px;">
+                      <a href="https://tidycal.com/gianni3/discovery-call"
+                         style="color:#ffffff;background:#1a1a1a;padding:5px 12px;text-decoration:none;font-weight:bold;font-size:11px;letter-spacing:0.06em;display:inline-block;">
+                        BOOK A MEETING WITH ME
+                      </a>
+                    </p>
+                  </td>
+                </tr>
+              </table>
+
+            </td>
+          </tr>
+
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`;
+
+  // Plain text fallback
+  const plainText = `${emailBody}\n\nDownload your strategy brief:\n${pdfUrl}\n\n--\nGianni Candido | Founder, Omega Praxis\nwww.omegapraxis.com | 0032 (0) 485 83 05 34\nBook a call: https://tidycal.com/gianni3/discovery-call`;
 
   const res = await fetch('https://api.resend.com/emails', {
     method:  'POST',
@@ -304,7 +381,8 @@ async function sendEmail(data, emailBody, pdfUrl, recipientEmail, subjectPrefix 
       to:       [recipientEmail],
       reply_to: from,
       subject,
-      text:     fullBody
+      html,
+      text:     plainText
     })
   });
 
