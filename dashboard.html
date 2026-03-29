@@ -752,6 +752,7 @@
     <div style="display:flex;gap:8px;">
       <button class="btn btn-ghost" onclick="selectAll()">Select all</button>
       <button class="btn btn-ghost" onclick="importFromClipboard()" title="Paste JSON from Clay">⊕ Import JSON</button>
+      <button class="btn btn-danger" onclick="confirmClearAll()" title="Delete all leads from Firestore">✕ Clear all</button>
     </div>
   </div>
 
@@ -883,9 +884,27 @@
 
     <!-- CSV panel -->
     <div id="import-csv-panel">
-      <div class="config-note" style="margin-bottom:8px;">Paste the CSV exported directly from Clay. Column mapping is automatic.</div>
-      <textarea class="config-input" id="csv-import-area" rows="7" placeholder="Paste Clay CSV export here..." style="resize:vertical;line-height:1.5;font-size:10px;"></textarea>
-      <button class="btn btn-accent" style="width:100%;margin-top:8px;" onclick="importCSV()">↓ Import CSV</button>
+      <div class="config-note" style="margin-bottom:10px;">Select your Clay CSV export file. Column mapping is automatic.</div>
+
+      <!-- Drop zone / file picker -->
+      <div id="csv-dropzone" onclick="document.getElementById('csv-file-input').click()"
+        style="border:1px dashed var(--border-hover);border-radius:var(--radius);padding:20px;text-align:center;cursor:pointer;transition:border-color 0.15s,background 0.15s;"
+        ondragover="event.preventDefault();this.style.borderColor='var(--accent)';this.style.background='var(--accent-dim)'"
+        ondragleave="this.style.borderColor='var(--border-hover)';this.style.background='transparent'"
+        ondrop="handleCsvDrop(event)">
+        <div style="font-size:22px;margin-bottom:6px;">📂</div>
+        <div style="font-size:12px;color:var(--text-2);" id="csv-file-label">Click to select CSV file</div>
+        <div style="font-size:10px;color:var(--text-3);margin-top:4px;">or drag & drop</div>
+      </div>
+      <input type="file" id="csv-file-input" accept=".csv,text/csv" style="display:none" onchange="handleCsvFile(this)">
+
+      <!-- Preview -->
+      <div id="csv-preview" style="display:none;margin-top:10px;">
+        <div style="font-size:11px;font-family:'DM Mono',monospace;color:var(--text-3);margin-bottom:6px;" id="csv-preview-label"></div>
+        <div style="max-height:120px;overflow-y:auto;background:var(--surface-3);border-radius:var(--radius);padding:8px;font-size:10px;font-family:'DM Mono',monospace;color:var(--text-2);" id="csv-preview-rows"></div>
+      </div>
+
+      <button class="btn btn-accent" style="width:100%;margin-top:10px;" id="csv-import-btn" onclick="importCSV()" disabled>↓ Import leads</button>
     </div>
 
     <!-- JSON panel -->
@@ -1008,7 +1027,7 @@ function loadDemoData() {
     { id: uid(), name: 'Lucía Varga', company: 'Fiorelda', email: 'lucia@fiorelda.es', receivedAt: new Date(Date.now() - 3600000 * 4).toISOString(), preview: "Thanks for this Gianni — I actually just shared it with my co-founder. The gap you called out on our sales funnel is exactly what we've been struggling to articulate. Would love to find 30 minutes." }
   ];
   renderAll();
-  toast('6 leads loaded', 'success');
+  toast('6 demo leads loaded (in-memory only)', '');
 }
 
 // ── RENDER ──
@@ -1181,6 +1200,7 @@ function updateCharCount(id) {
 
 function skipLead(id) {
   leads = leads.filter(l => l.id !== id);
+  deleteLeadFromFirestore(id);
   renderQueue();
   updateStats();
 }
@@ -1228,6 +1248,7 @@ async function sendSingle(id) {
     lead.sentAt = new Date().toISOString();
     lead.checked = false;
     sentTodayCount++;
+    updateLeadInFirestore(lead.id, { status: 'sent', sentAt: lead.sentAt });
     toast(`Sent to ${lead.name} at ${lead.company}`, 'success');
     renderAll();
   } catch(e) {
@@ -1367,98 +1388,167 @@ function switchImportTab(tab) {
 }
 
 // ── CSV PARSER ──
+// Handles quoted fields, embedded commas, and escaped double-quotes
 function parseCSV(text) {
-  const lines = text.trim().split(/\r?\n/);
-  if (lines.length < 2) return [];
+  // Normalise line endings
+  const lines = text.trim().replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
+  if (lines.length < 2) return { headers: [], rows: [] };
 
-  // Parse a single CSV line respecting quoted fields
   function parseLine(line) {
     const fields = [];
-    let cur = '', inQ = false;
-    for (let i = 0; i < line.length; i++) {
+    let cur = '', inQ = false, i = 0;
+    while (i < line.length) {
       const ch = line[i];
       if (ch === '"') {
-        if (inQ && line[i+1] === '"') { cur += '"'; i++; }
-        else inQ = !inQ;
-      } else if (ch === ',' && !inQ) {
-        fields.push(cur); cur = '';
-      } else {
-        cur += ch;
+        if (inQ && line[i + 1] === '"') { cur += '"'; i += 2; continue; }
+        inQ = !inQ; i++; continue;
       }
+      if (ch === ',' && !inQ) { fields.push(cur); cur = ''; i++; continue; }
+      cur += ch; i++;
     }
     fields.push(cur);
-    return fields;
+    return fields.map(f => f.trim().replace(/^"|"$/g, ''));
   }
 
-  const headers = parseLine(lines[0]).map(h => h.trim());
+  const headers = parseLine(lines[0]);
   const rows = [];
   for (let i = 1; i < lines.length; i++) {
     if (!lines[i].trim()) continue;
     const vals = parseLine(lines[i]);
     const obj = {};
-    headers.forEach((h, idx) => { obj[h] = (vals[idx] || '').trim(); });
+    headers.forEach((h, idx) => { obj[h] = vals[idx] || ''; });
     rows.push(obj);
   }
-  return rows;
+  return { headers, rows };
 }
 
-// ── Clay column name → dashboard field mapping ──
+// ── Clay column → field mapping ──
+// Keys are the EXACT Clay column headers from your export
+const CLAY_MAP = {
+  name:              ['Fullname - People', 'Full Name', 'Fullname', 'name', 'CEO Name'],
+  company:           ['LinkedIn URL'],           // derived from URL below — company is NOT in CSV as a named col
+  email:             ['Work Email', 'Email', 'email'],
+  linkedinUrl:       ['LinkedIn URL', 'linkedin_url'],
+  tier:              ['ICP Target', 'Tier', 'tier'],
+  pocBrief:          ['POC Brief', 'poc_brief'],
+  pocStrategic:      ['POC Strategic Summary TEXT', 'POC Strategic Summary', 'poc_strategic'],
+  ceoPainPoints:     ['CEO Pain Point Research TEXT', 'CEO Pain Point Research', 'ceo_pain_points'],
+  linkedinSummary:   ['LinkedIn Post Summary TEXT', 'LinkedIn Post Summary', 'linkedin_summary'],
+  founderChallenges: ['TEXT Founder Recent Challenges Post', 'founder_challenges'],
+  jobtitle:          ['Jobtitle - People', 'Job Title', 'jobtitle'],
+};
+
+function getField(row, ...keys) {
+  for (const k of keys) {
+    const v = (row[k] || '').trim();
+    if (v && v !== 'N/A' && v !== 'None' && v !== 'none') return v;
+  }
+  return '';
+}
+
+function extractCompanyFromPocBrief(pocBrief) {
+  // POC Brief always starts with "COMPANY: Leneo
+DOMAIN: ..."
+  const m = pocBrief.match(/COMPANY:\s*([^\n]+)/i);
+  return m ? m[1].trim() : '';
+}
+
 function mapClayRow(row) {
-  // Helper: try multiple possible column names
-  const get = (...keys) => {
-    for (const k of keys) {
-      const val = row[k] || row[k.toLowerCase()] || '';
-      if (val && val !== 'N/A' && val !== 'None') return val;
-    }
-    return '';
-  };
+  const pocBrief = getField(row, ...CLAY_MAP.pocBrief);
+  const tierRaw  = getField(row, ...CLAY_MAP.tier);
+  const tier     = tierRaw.includes('1') ? 1 : tierRaw.includes('2') ? 2 : 1;
 
-  const tierRaw = get('ICP Target', 'ICP_Target', 'tier', 'Tier');
-  const tier = tierRaw.includes('1') ? 1 : tierRaw.includes('2') ? 2 : 1;
-
-  const company = get(
-    'Privately Held B2B SaaS Companies Europe US',
-    'Company', 'company', 'companyName', 'Company Name'
-  );
+  // Company: extract from POC Brief since Clay CSV doesn't have a plain "Company" column
+  const company  = extractCompanyFromPocBrief(pocBrief) ||
+                   getField(row, 'Company', 'company', 'companyName');
 
   return {
     id:                uid(),
-    name:              get('Fullname - People', 'Full Name', 'Fullname', 'name', 'ceoName', 'CEO Name'),
-    company:           company,
-    email:             get('Work Email', 'Email', 'email', 'ceoEmail', 'CEO Email'),
+    name:              getField(row, ...CLAY_MAP.name),
+    company,
+    email:             getField(row, ...CLAY_MAP.email),
     score:             tier === 1 ? 9 : 7,
     tier,
-    employees:         parseInt(get('Employees', 'headcount', 'employees')) || 0,
-    linkedinUrl:       get('LinkedIn URL', 'linkedin_url', 'linkedinUrl', 'CEO LinkedIn'),
-    pocBrief:          get('POC Brief', 'poc_brief', 'pocBrief'),
-    pocStrategic:      get('POC Strategic Summary TEXT', 'poc_strategic', 'pocStrategic', 'POC Strategic Summary'),
-    ceoPainPoints:     get('CEO Pain Point Research TEXT', 'ceo_pain_points', 'ceoPainPoints', 'Pain Point Hypothesis'),
-    linkedinSummary:   get('LinkedIn Post Summary TEXT', 'linkedin_summary', 'linkedinSummary', 'LinkedIn Post Summary'),
-    founderChallenges: get('TEXT Founder Recent Challenges Post', 'founder_challenges', 'founderChallenges'),
-    auditMessage:      get('auditMessage', 'audit_message', 'researchSummary'),
+    employees:         0,
+    linkedinUrl:       getField(row, ...CLAY_MAP.linkedinUrl),
+    pocBrief,
+    pocStrategic:      getField(row, ...CLAY_MAP.pocStrategic),
+    ceoPainPoints:     getField(row, ...CLAY_MAP.ceoPainPoints),
+    linkedinSummary:   getField(row, ...CLAY_MAP.linkedinSummary),
+    founderChallenges: getField(row, ...CLAY_MAP.founderChallenges),
+    auditMessage:      '',
     status:            'pending',
     checked:           false
   };
 }
 
-function importCSV() {
-  const raw = document.getElementById('csv-import-area').value.trim();
-  if (!raw) { toast('Paste Clay CSV first', 'error'); return; }
+// ── File picker & drag-drop handlers ──
+let csvParsedRows = [];
+
+function handleCsvFile(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = (e) => processCsvText(e.target.result, file.name);
+  reader.readAsText(file, 'UTF-8');
+}
+
+function handleCsvDrop(e) {
+  e.preventDefault();
+  document.getElementById('csv-dropzone').style.borderColor = 'var(--border-hover)';
+  document.getElementById('csv-dropzone').style.background  = 'transparent';
+  const file = e.dataTransfer.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = (ev) => processCsvText(ev.target.result, file.name);
+  reader.readAsText(file, 'UTF-8');
+}
+
+function processCsvText(text, filename) {
   try {
-    const rows = parseCSV(raw);
-    if (!rows.length) throw new Error('No rows found');
-    const mapped = rows
-      .map(mapClayRow)
-      .filter(l => l.name && l.email);
-    if (!mapped.length) throw new Error('No valid leads found — check email and name columns');
-    leads = [...leads, ...mapped];
-    renderAll();
-    toggleConfig();
-    document.getElementById('csv-import-area').value = '';
-    toast(`Imported ${mapped.length} leads from CSV`, 'success');
+    const { headers, rows } = parseCSV(text);
+    if (!rows.length) throw new Error('No data rows found');
+
+    csvParsedRows = rows.map(mapClayRow).filter(l => l.name && l.email);
+
+    // Update UI
+    document.getElementById('csv-file-label').textContent = `${filename} — ${rows.length} rows`;
+    document.getElementById('csv-preview-label').textContent =
+      `${csvParsedRows.length} valid leads found (name + email present)`;
+
+    // Show preview of first 3 leads
+    const previewHtml = csvParsedRows.slice(0, 3).map(l =>
+      `✓ ${l.name} &lt;${l.email}&gt; — ${l.company || '(company from brief)'}`
+    ).join('<br>');
+    document.getElementById('csv-preview-rows').innerHTML =
+      previewHtml + (csvParsedRows.length > 3 ? `<br><span style="color:var(--text-3)">...and ${csvParsedRows.length - 3} more</span>` : '');
+
+    document.getElementById('csv-preview').style.display = 'block';
+    document.getElementById('csv-import-btn').disabled = csvParsedRows.length === 0;
+    document.getElementById('csv-dropzone').style.borderColor = 'var(--accent-border)';
+
+    if (csvParsedRows.length === 0) toast('No valid leads found — check name and email columns', 'error');
   } catch(e) {
     toast('CSV error: ' + e.message, 'error');
   }
+}
+
+async function importCSV() {
+  if (!csvParsedRows.length) { toast('Select a CSV file first', 'error'); return; }
+  const newLeads = [...csvParsedRows];
+  leads = [...leads, ...newLeads];
+  csvParsedRows = [];
+  renderAll();
+  toggleConfig();
+  // Reset file picker
+  document.getElementById('csv-file-input').value = '';
+  document.getElementById('csv-file-label').textContent = 'Click to select CSV file';
+  document.getElementById('csv-preview').style.display = 'none';
+  document.getElementById('csv-import-btn').disabled = true;
+  document.getElementById('csv-dropzone').style.borderColor = 'var(--border-hover)';
+  toast(`Importing ${newLeads.length} leads to Firestore...`, '');
+  await saveLeadsToFirestore(newLeads);
+  toast(`${newLeads.length} leads saved to Firestore`, 'success');
 }
 
 // ── IMPORT ──
@@ -1502,6 +1592,23 @@ function importFromClipboard() {
     document.getElementById('json-import-area').value = text;
     toggleConfig();
   }).catch(() => { toggleConfig(); toast('Open Config to paste JSON', ''); });
+}
+
+// ── CLEAR ALL ──
+async function confirmClearAll() {
+  if (!confirm('Delete ALL leads from Firestore? This cannot be undone.')) return;
+  try {
+    const base = getApiBase();
+    if (base) {
+      toast('Clearing Firestore...', '');
+      await clearAllLeadsFromFirestore();
+    }
+    leads = []; sentLeads = []; replies = [];
+    renderAll();
+    toast('All leads cleared', 'success');
+  } catch(e) {
+    toast('Clear failed: ' + e.message, 'error');
+  }
 }
 
 // ── UTILS ──
