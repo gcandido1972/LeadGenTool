@@ -145,9 +145,16 @@ app.post('/growth-report', async (req, res) => {
   const testPrefix     = isTest ? '[TEST] ' : '';
 
   try {
-    console.log(`◆ Step 1/3 — Generating email copy for ${data.ceoName} / ${data.company}...`);
-    const emailCopy = await generateEmailCopy(data);
-    console.log('✓ Email copy done');
+    // Use edited email from preview modal if provided, otherwise generate fresh
+    let emailCopy;
+    if (raw._previewBody && raw._previewBody.trim().length > 20) {
+      emailCopy = raw._previewBody;
+      console.log(`◆ Step 1/3 — Using edited email from preview modal`);
+    } else {
+      console.log(`◆ Step 1/3 — Generating email copy for ${data.ceoName} / ${data.company}...`);
+      emailCopy = await generateEmailCopy(data);
+      console.log('✓ Email copy done');
+    }
 
     console.log('◆ Step 2/3 — Generating PDF...');
     const pdfBuffer = await generateBriefPdf(data);
@@ -212,6 +219,19 @@ app.get('/test', async (req, res) => {
   }
 });
 
+// ── /preview-email — generate email copy without sending ────
+app.post('/preview-email', async (req, res) => {
+  const raw  = { ...req.query, ...req.body };
+  const data = parseClayFields(raw);
+  try {
+    const emailCopy = await generateEmailCopy(data);
+    res.json({ success: true, emailCopy, company: data.company, ceoName: data.ceoName });
+  } catch (err) {
+    console.error('✗ Preview error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ── Claude: email copy ────────────────────────────────────────
 async function generateEmailCopy(data) {
   const msg = await anthropic.messages.create({
@@ -232,7 +252,7 @@ Rules:
 - 3 short paragraphs only.
 - Para 1: One specific observation about their current growth challenge — name something precise from the data.
 - Para 2: One sentence on what the attached brief contains and why it is relevant to them specifically.
-- Para 3: CTA — "The next step? A 30-minute conversation." with link https://omegapraxis.com/strategic-guidance
+- Para 3: CTA — "The next step? A 30-minute conversation." with link https://tidycal.com/gianni3/discovery-call
 - Sign off: Gianni Candido / Founder, Omega Praxis
 - Return ONLY the email body. No subject line. No HTML. Plain text with line breaks.`
     }]
