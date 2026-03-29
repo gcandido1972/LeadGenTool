@@ -1,15 +1,18 @@
 /**
  * storage.js
- * Firebase Storage REST API wrapper — uploads PDFs and returns public URLs.
- * Uses the same service account credentials as Firestore.
+ * Firebase Storage REST API wrapper.
+ * Supports both old (appspot.com) and new (firebasestorage.app) bucket formats.
  */
 
-const PROJECT_ID  = process.env.FIREBASE_PROJECT_ID || 'devgurucatdb';
-const BUCKET      = `${PROJECT_ID}.appspot.com`;
-const STORAGE_URL = `https://firebasestorage.googleapis.com/v0/b/${BUCKET}/o`;
-const UPLOAD_URL  = `https://storage.googleapis.com/upload/storage/v1/b/${BUCKET}/o`;
+const PROJECT_ID = process.env.FIREBASE_PROJECT_ID || 'devgurucatdb';
+const BUCKET     = process.env.FIREBASE_STORAGE_BUCKET || `${PROJECT_ID}.appspot.com`;
 
-// ── Reuse auth token logic ────────────────────────────────────
+// API endpoints — same for both bucket formats
+const UPLOAD_URL  = `https://storage.googleapis.com/upload/storage/v1/b/${BUCKET}/o`;
+const OBJECTS_URL = `https://storage.googleapis.com/storage/v1/b/${BUCKET}/o`;
+const PUBLIC_BASE = `https://storage.googleapis.com/${BUCKET}`;
+
+// ── Auth ──────────────────────────────────────────────────────
 let cachedToken = null;
 let tokenExpiry = 0;
 
@@ -34,8 +37,7 @@ async function getAccessToken() {
   const { createSign } = await import('crypto');
   const sign = createSign('RSA-SHA256');
   sign.update(unsigned);
-  const signature = sign.sign(sa.private_key, 'base64url');
-  const jwt = `${unsigned}.${signature}`;
+  const jwt = `${unsigned}.${sign.sign(sa.private_key, 'base64url')}`;
 
   const res = await fetch('https://oauth2.googleapis.com/token', {
     method:  'POST',
@@ -53,68 +55,89 @@ async function getAccessToken() {
   return cachedToken;
 }
 
-// ── Upload PDF and return public download URL ─────────────────
+// ── Upload PDF ────────────────────────────────────────────────
 export async function uploadPdf(pdfBuffer, filename) {
   const token       = await getAccessToken();
   const storagePath = `briefs/${filename}`;
   const encodedPath = encodeURIComponent(storagePath);
 
-  // Upload via multipart
-  const res = await fetch(
+  console.log(`   → Uploading to gs://${BUCKET}/${storagePath}`);
+
+  // Upload via simple media upload
+  const uploadRes = await fetch(
     `${UPLOAD_URL}?uploadType=media&name=${encodedPath}`,
     {
       method:  'POST',
       headers: {
-        'Authorization':  `Bearer ${token}`,
-        'Content-Type':   'application/pdf',
-        'Content-Length': pdfBuffer.length
+        'Authorization': `Bearer ${token}`,
+        'Content-Type':  'application/pdf',
       },
       body: pdfBuffer
     }
   );
 
-  if (!res.ok) {
-    const err = await res.text();
+  if (!uploadRes.ok) {
+    const err = await uploadRes.text();
     throw new Error(`Storage upload failed: ${err}`);
   }
 
-  // Make the file publicly readable
-  const tokenRes = await fetch(
-    `${STORAGE_URL}/${encodedPath}?alt=media`,
-    { headers: { 'Authorization': `Bearer ${token}` } }
-  );
+  const uploadData = await uploadRes.json();
+  console.log(`   → Upload OK: ${uploadData.name}`);
 
-  // Build the public download URL (Firebase Storage public URL format)
-  const publicUrl = `${STORAGE_URL}/${encodedPath}?alt=media`;
+  // Make file publicly readable by patching IAM
+  await setPublicRead(token, encodedPath);
 
-  // Set public read access via IAM
-  await makePublic(token, storagePath);
+  // Public download URL — works for both appspot.com and firebasestorage.app
+  const downloadUrl = `${PUBLIC_BASE}/${storagePath}`;
 
-  return {
-    publicUrl,
-    downloadUrl: `https://storage.googleapis.com/${BUCKET}/${storagePath}`,
-    storagePath
-  };
+  return { downloadUrl, storagePath };
 }
 
-async function makePublic(token, storagePath) {
-  const encodedPath = encodeURIComponent(storagePath);
-  // Update metadata to make file public
-  await fetch(
-    `${STORAGE_URL}/${encodedPath}`,
-    {
-      method:  'PATCH',
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type':  'application/json'
-      },
-      body: JSON.stringify({ metadata: { firebaseStorageDownloadTokens: '' } })
+// ── Make object publicly readable ─────────────────────────────
+async function setPublicRead(token, encodedPath) {
+  try {
+    const iamRes = await fetch(
+      `${OBJECTS_URL}/${encodedPath}/iam`,
+      {
+        method:  'PUT',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type':  'application/json'
+        },
+        body: JSON.stringify({
+          bindings: [{
+            role:    'roles/storage.objectViewer',
+            members: ['allUsers']
+          }]
+        })
+      }
+    );
+    if (!iamRes.ok) {
+      // IAM may fail if uniform bucket-level access is off — try alternative
+      const alt = await iamRes.text();
+      console.warn('   ⚠ IAM patch skipped (uniform ACL may be on):', alt.slice(0, 100));
+      // Try ACL approach as fallback
+      await setAclPublic(token, encodedPath);
     }
-  );
+  } catch(e) {
+    console.warn('   ⚠ setPublicRead failed:', e.message);
+  }
 }
 
-// ── Generate a signed download URL (works without public access) ──
-export function getStorageDownloadUrl(storagePath) {
-  const encodedPath = encodeURIComponent(storagePath);
-  return `${STORAGE_URL}/${encodedPath}?alt=media`;
+async function setAclPublic(token, encodedPath) {
+  try {
+    await fetch(
+      `${OBJECTS_URL}/${encodedPath}/acl`,
+      {
+        method:  'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type':  'application/json'
+        },
+        body: JSON.stringify({ entity: 'allUsers', role: 'READER' })
+      }
+    );
+  } catch(e) {
+    console.warn('   ⚠ ACL fallback also failed:', e.message);
+  }
 }
