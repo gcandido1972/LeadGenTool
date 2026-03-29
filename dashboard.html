@@ -942,7 +942,7 @@ window.addEventListener('DOMContentLoaded', () => {
   loadConfig();
   syncConfig();
   startPolling();
-  updateStats();
+  loadLeadsFromFirestore();
 });
 
 function loadConfig() {
@@ -980,6 +980,94 @@ function syncConfig() {
     document.getElementById('webhook-dot').className = 'dot ' + (headerInput.value ? 'connected' : '');
   });
   document.getElementById('webhook-dot').className = 'dot ' + (config.sendWebhook ? 'connected' : '');
+}
+
+
+// ── FIRESTORE API ─────────────────────────────────────────────
+function getApiBase() {
+  const url = config.sendWebhook || document.getElementById('webhook-url-input').value.trim();
+  return url.replace(/\/growth-report$/, '').replace(/\/$/, '');
+}
+
+async function loadLeadsFromFirestore() {
+  const base = getApiBase();
+  if (!base) { updateStats(); return; }
+  try {
+    document.getElementById('leads-tbody').innerHTML = `<tr><td colspan="9"><div class="empty"><div class="empty-icon" style="display:inline-block;">⟳</div><div class="empty-title" style="margin-top:8px;">Loading from Firestore...</div></div></td></tr>`;
+    const res  = await fetch(`${base}/leads`);
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    leads = data.map(l => ({ ...l, checked: false }));
+    renderAll();
+    if (leads.length) toast(`Loaded ${leads.length} leads from Firestore`, 'success');
+    else renderQueue();
+  } catch(e) {
+    console.warn('Firestore load failed:', e.message);
+    updateStats();
+    renderQueue();
+  }
+}
+
+async function saveLeadsToFirestore(newLeads) {
+  const base = getApiBase();
+  if (!base) { toast('Set Railway URL first', 'error'); return; }
+  // Send in batches of 5 to avoid payload size issues
+  const BATCH = 5;
+  let saved = 0;
+  for (let i = 0; i < newLeads.length; i += BATCH) {
+    const batch = newLeads.slice(i, i + BATCH);
+    try {
+      const res = await fetch(`${base}/leads`, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ leads: batch })
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        console.error('Batch save failed:', err);
+        toast(`Batch ${Math.floor(i/BATCH)+1} failed: ${err.error || res.status}`, 'error');
+      } else {
+        const data = await res.json();
+        saved += data.saved || batch.length;
+      }
+    } catch(e) {
+      console.error('Batch save error:', e.message);
+      toast('Save error: ' + e.message, 'error');
+    }
+  }
+  return saved;
+}
+
+async function updateLeadInFirestore(id, fields) {
+  const base = getApiBase();
+  if (!base) return;
+  try {
+    await fetch(`${base}/leads/${id}`, {
+      method:  'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify(fields)
+    });
+  } catch(e) {
+    console.warn('Firestore update failed:', e.message);
+  }
+}
+
+async function deleteLeadFromFirestore(id) {
+  const base = getApiBase();
+  if (!base) return;
+  try {
+    await fetch(`${base}/leads/${id}`, { method: 'DELETE' });
+  } catch(e) {
+    console.warn('Firestore delete failed:', e.message);
+  }
+}
+
+async function clearAllLeadsFromFirestore() {
+  const base = getApiBase();
+  if (!base) return;
+  const res = await fetch(`${base}/leads`, { method: 'DELETE' });
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  return await res.json();
 }
 
 function saveConfig() {
