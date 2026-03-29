@@ -252,7 +252,7 @@ Rules:
 - 3 short paragraphs only.
 - Para 1: One specific observation about their current growth challenge — name something precise from the data.
 - Para 2: One sentence on what the attached brief contains and why it is relevant to them specifically.
-- Para 3: CTA — "The next step? A 30-minute conversation." with link https://tidycal.com/gianni3/discovery-call
+- Para 3: CTA — Write "The next step? A 30-minute conversation." then on a new line write a clean hyperlink as: Book your call → https://tidycal.com/gianni3/discovery-call
 - Sign off: Gianni Candido / Founder, Omega Praxis
 - Return ONLY the email body. No subject line. No HTML. Plain text with line breaks.`
     }]

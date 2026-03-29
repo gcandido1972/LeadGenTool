@@ -208,7 +208,7 @@ function drawCtaPage(doc, company) {
   });
 
   y += 192;
-  doc.font('Helvetica-Bold').fontSize(11).fillColor(C.lime).text('tidycal.com/gianni3/discovery-call →', MARGIN, y);
+  doc.font('Helvetica-Bold').fontSize(11).fillColor(C.lime).text('Book your call → tidycal.com/gianni3/discovery-call', MARGIN, y);
 
   doc.rect(MARGIN, PAGE_H - 80, PAGE_W - MARGIN * 2, 0.5).fill('#2a2a2c');
   doc.font('Helvetica-Bold').fontSize(12).fillColor(C.offwhite).text('Gianni Candido', MARGIN, PAGE_H - 62);
