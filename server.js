@@ -3,6 +3,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { generateBriefPdf } from './briefTemplate.js';
 import { parseClayFields } from './parseFields.js';
 import { firestoreSet, firestoreList, firestoreUpdate, firestoreDelete } from './firestore.js';
+import { uploadPdf } from './storage.js';
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
@@ -14,7 +15,7 @@ const app       = express();
 // ── CORS ──────────────────────────────────────────────────────
 app.use((req, res, next) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PATCH, DELETE, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
   if (req.method === 'OPTIONS') return res.sendStatus(204);
   next();
@@ -32,9 +33,9 @@ if (TEST_MODE) console.log(`⚠️  TEST MODE ON — all emails → ${TEST_EMAIL
 // ── Health check ──────────────────────────────────────────────
 app.get('/', (req, res) => res.json({
   status:   'Omega Praxis webhook live',
-  version:  '3.0',
+  version:  '4.0',
   testMode: TEST_MODE,
-  db:       'Firestore — devgurucatdb'
+  db:       'Firestore + Firebase Storage — devgurucatdb'
 }));
 
 // ── Dashboard ─────────────────────────────────────────────────
@@ -49,14 +50,12 @@ app.get('/dashboard', (req, res) => {
 });
 
 // ══════════════════════════════════════════════════════════════
-// FIRESTORE API — called by the dashboard
+// FIRESTORE API
 // ══════════════════════════════════════════════════════════════
 
-// GET /leads — list all leads
 app.get('/leads', async (req, res) => {
   try {
     const leads = await firestoreList('leads');
-    // Sort by createdAt desc
     leads.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
     res.json(leads);
   } catch (err) {
@@ -65,22 +64,15 @@ app.get('/leads', async (req, res) => {
   }
 });
 
-// POST /leads — save a batch of leads from CSV import
 app.post('/leads', async (req, res) => {
   const { leads } = req.body;
   if (!Array.isArray(leads) || !leads.length)
     return res.status(400).json({ error: 'leads array required' });
-
   try {
     const saved = [];
     for (const lead of leads) {
-      const id = lead.id || randomId();
-      const doc = {
-        ...lead,
-        id,
-        createdAt: lead.createdAt || new Date().toISOString(),
-        status:    lead.status || 'pending'
-      };
+      const id  = lead.id || randomId();
+      const doc = { ...lead, id, createdAt: lead.createdAt || new Date().toISOString(), status: lead.status || 'pending' };
       await firestoreSet('leads', id, doc);
       saved.push(id);
     }
@@ -92,7 +84,6 @@ app.post('/leads', async (req, res) => {
   }
 });
 
-// PATCH /leads/:id — update lead status / fields
 app.patch('/leads/:id', async (req, res) => {
   try {
     await firestoreUpdate('leads', req.params.id, req.body);
@@ -103,23 +94,21 @@ app.patch('/leads/:id', async (req, res) => {
   }
 });
 
-// DELETE /leads/:id — remove a lead
 app.delete('/leads/:id', async (req, res) => {
   try {
     await firestoreDelete('leads', req.params.id);
     res.json({ ok: true });
   } catch (err) {
-    console.error('✗ DELETE /leads:', err.message);
+    console.error('✗ DELETE /leads/:id:', err.message);
     res.status(500).json({ error: err.message });
   }
 });
 
-// DELETE /leads — clear ALL leads
 app.delete('/leads', async (req, res) => {
   try {
     const leads = await firestoreList('leads');
     for (const l of leads) await firestoreDelete('leads', l.id);
-    console.log(`✓ Cleared ${leads.length} leads from Firestore`);
+    console.log(`✓ Cleared ${leads.length} leads`);
     res.json({ deleted: leads.length });
   } catch (err) {
     console.error('✗ DELETE /leads:', err.message);
@@ -128,98 +117,39 @@ app.delete('/leads', async (req, res) => {
 });
 
 // ══════════════════════════════════════════════════════════════
-// MAIN WEBHOOK — Clay POSTs here
+// PDF GENERATION + FIREBASE STORAGE UPLOAD
+// Returns download URL — used by dashboard before sending
 // ══════════════════════════════════════════════════════════════
-app.post('/growth-report', async (req, res) => {
+app.post('/generate-pdf', async (req, res) => {
   const raw  = { ...req.query, ...req.body };
-  console.log('▶ Incoming from Clay:', JSON.stringify(raw, null, 2));
-
   const data = parseClayFields(raw);
-  if (!data.email) {
-    console.error('✗ Missing email');
-    return res.status(400).json({ error: 'email is required' });
-  }
 
-  const isTest         = TEST_MODE || raw._testOverride === true || raw._testOverride === 'true';
-  const recipientEmail = isTest ? TEST_EMAIL : data.email;
-  const testPrefix     = isTest ? '[TEST] ' : '';
-
+  console.log(`◆ Generating PDF for ${data.company}...`);
   try {
-    // Use edited email from preview modal if provided, otherwise generate fresh
-    let emailCopy;
-    if (raw._previewBody && raw._previewBody.trim().length > 20) {
-      emailCopy = raw._previewBody;
-      console.log(`◆ Step 1/3 — Using edited email from preview modal`);
-    } else {
-      console.log(`◆ Step 1/3 — Generating email copy for ${data.ceoName} / ${data.company}...`);
-      emailCopy = await generateEmailCopy(data);
-      console.log('✓ Email copy done');
-    }
-
-    console.log('◆ Step 2/3 — Generating PDF...');
     const pdfBuffer = await generateBriefPdf(data);
-    console.log(`✓ PDF done — ${pdfBuffer.length} bytes`);
+    const filename  = `Omega-Praxis-Brief-${data.company.replace(/[^a-z0-9]/gi, '-')}-${Date.now()}.pdf`;
 
-    console.log(`◆ Step 3/3 — Sending to ${recipientEmail} via Resend...`);
-    await sendEmail(data, emailCopy, pdfBuffer, recipientEmail, testPrefix);
-    console.log('✓ Sent');
+    console.log(`◆ Uploading PDF to Firebase Storage...`);
+    const { downloadUrl, storagePath } = await uploadPdf(pdfBuffer, filename);
+    console.log(`✓ PDF uploaded — ${downloadUrl}`);
 
-    // Log the send to Firestore
-    const leadId = raw.leadId || randomId();
-    try {
-      await firestoreUpdate('leads', leadId, {
-        status: 'sent',
-        sentAt: new Date().toISOString(),
-        sentTo: recipientEmail
-      });
-      console.log(`✓ Firestore updated — lead ${leadId} → sent`);
-    } catch (e) {
-      console.warn('⚠ Firestore update skipped (lead may not exist):', e.message);
+    // Save URL to Firestore lead record if leadId provided
+    if (raw.leadId) {
+      try {
+        await firestoreUpdate('leads', raw.leadId, { pdfUrl: downloadUrl, pdfPath: storagePath });
+      } catch(e) { console.warn('Firestore PDF url update skipped:', e.message); }
     }
 
-    res.json({
-      success:       true,
-      recipient:     recipientEmail,
-      originalEmail: data.email,
-      company:       data.company,
-      testMode:      isTest
-    });
-
+    res.json({ success: true, downloadUrl, storagePath, filename });
   } catch (err) {
-    console.error('✗ Error:', err.message);
+    console.error('✗ PDF generation failed:', err.message);
     res.status(500).json({ error: err.message });
   }
 });
 
-// ── /test endpoint ────────────────────────────────────────────
-app.get('/test', async (req, res) => {
-  console.log('▶ Manual test triggered');
-  const data = parseClayFields({
-    company:            'Cacheflow (Acquired by HubSpot)',
-    email:              'test-lead@example.com',
-    poc_brief:          'COMPANY: Cacheflow\nDOMAIN: getcacheflow.com\nCEO NAME: John Gengarella\nCEO LINKEDIN: https://linkedin.com/in/johngengarella',
-    poc_strategic:      'Branding_VP: Integrated CPQ billing platform for SaaS\nBranding_clarity: Generic\nBranding_gap: No clear customer-facing value proposition\nMarketing_content: LinkedIn only\nMarketing_gap: No blog or case studies\nSales_funnel: Self-serve\nSales_gap: No enterprise sales motion\nPartnerships_existing: None\nPartnership_gap: Missing HubSpot ecosystem integrations',
-    ceo_pain_points:    'Topic: scaling revenue post-acquisition\nRelevance: High',
-    linkedin_summary:   'John posts regularly about enterprise AI and startup scaling.',
-    founder_challenges: 'Scaling GTM post-acquisition'
-  });
-
-  try {
-    console.log('◆ Step 1/3 — Email copy...');
-    const emailCopy = await generateEmailCopy(data);
-    console.log('◆ Step 2/3 — PDF...');
-    const pdfBuffer = await generateBriefPdf(data);
-    console.log('◆ Step 3/3 — Sending...');
-    await sendEmail(data, emailCopy, pdfBuffer, TEST_EMAIL, '[TEST] ');
-    console.log('✓ Test done');
-    res.json({ success: true, recipient: TEST_EMAIL, pdfBytes: pdfBuffer.length, emailPreview: emailCopy });
-  } catch (err) {
-    console.error('✗ Test error:', err.message);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// ── /preview-email — generate email copy without sending ────
+// ══════════════════════════════════════════════════════════════
+// EMAIL PREVIEW — generate email copy without sending
+// ══════════════════════════════════════════════════════════════
 app.post('/preview-email', async (req, res) => {
   const raw  = { ...req.query, ...req.body };
   const data = parseClayFields(raw);
@@ -232,8 +162,102 @@ app.post('/preview-email', async (req, res) => {
   }
 });
 
+// ══════════════════════════════════════════════════════════════
+// MAIN WEBHOOK — Clay POSTs here / dashboard sends here
+// ══════════════════════════════════════════════════════════════
+app.post('/growth-report', async (req, res) => {
+  const raw  = { ...req.query, ...req.body };
+  console.log('▶ Incoming:', raw.company, raw.email);
+
+  const data = parseClayFields(raw);
+  if (!data.email) return res.status(400).json({ error: 'email is required' });
+
+  const isTest         = TEST_MODE || raw._testOverride === true || raw._testOverride === 'true';
+  const recipientEmail = isTest ? TEST_EMAIL : data.email;
+  const testPrefix     = isTest ? '[TEST] ' : '';
+
+  try {
+    // 1. Email copy — use edited version from preview modal if provided
+    let emailCopy;
+    if (raw._previewBody && raw._previewBody.trim().length > 20) {
+      emailCopy = raw._previewBody;
+      console.log('◆ Step 1/3 — Using edited email from preview');
+    } else {
+      console.log(`◆ Step 1/3 — Generating email copy...`);
+      emailCopy = await generateEmailCopy(data);
+    }
+    console.log('✓ Email copy ready');
+
+    // 2. PDF — use already-generated URL if available, otherwise generate fresh
+    let pdfUrl = raw._pdfUrl || null;
+    let pdfBuffer = null;
+
+    if (!pdfUrl) {
+      console.log('◆ Step 2/3 — Generating + uploading PDF...');
+      pdfBuffer = await generateBriefPdf(data);
+      const filename = `Omega-Praxis-Brief-${data.company.replace(/[^a-z0-9]/gi, '-')}-${Date.now()}.pdf`;
+      const uploaded = await uploadPdf(pdfBuffer, filename);
+      pdfUrl = uploaded.downloadUrl;
+      console.log(`✓ PDF at ${pdfUrl}`);
+    } else {
+      console.log(`◆ Step 2/3 — Reusing existing PDF: ${pdfUrl}`);
+    }
+
+    // 3. Send email with PDF link (no attachment)
+    console.log(`◆ Step 3/3 — Sending to ${recipientEmail}...`);
+    await sendEmail(data, emailCopy, pdfUrl, recipientEmail, testPrefix);
+    console.log('✓ Email sent');
+
+    // Update Firestore
+    const leadId = raw.leadId || randomId();
+    try {
+      await firestoreUpdate('leads', leadId, {
+        status: 'sent',
+        sentAt: new Date().toISOString(),
+        sentTo: recipientEmail,
+        pdfUrl
+      });
+    } catch(e) { console.warn('⚠ Firestore update skipped:', e.message); }
+
+    res.json({ success: true, recipient: recipientEmail, company: data.company, pdfUrl, testMode: isTest });
+
+  } catch (err) {
+    console.error('✗ Error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── /test ──────────────────────────────────────────────────────
+app.get('/test', async (req, res) => {
+  console.log('▶ Manual test triggered');
+  const data = parseClayFields({
+    company:            'Cacheflow (Acquired by HubSpot)',
+    email:              'test@example.com',
+    poc_brief:          'COMPANY: Cacheflow\nDOMAIN: getcacheflow.com\nCEO NAME: John Gengarella',
+    poc_strategic:      'Branding_VP: Integrated CPQ billing platform\nBranding_gap: No clear value prop\nMarketing_gap: No content engine\nSales_gap: No enterprise motion\nPartnership_gap: Missing HubSpot integrations',
+    ceo_pain_points:    'Topic: scaling revenue post-acquisition\nRelevance: High',
+    linkedin_summary:   'John posts about enterprise AI and startup scaling.',
+    founder_challenges: 'Scaling GTM post-acquisition'
+  });
+  try {
+    const emailCopy = await generateEmailCopy(data);
+    const pdfBuffer = await generateBriefPdf(data);
+    const filename  = `TEST-Brief-${Date.now()}.pdf`;
+    const { downloadUrl } = await uploadPdf(pdfBuffer, filename);
+    await sendEmail(data, emailCopy, downloadUrl, TEST_EMAIL, '[TEST] ');
+    console.log('✓ Test done');
+    res.json({ success: true, recipient: TEST_EMAIL, pdfUrl: downloadUrl, emailPreview: emailCopy });
+  } catch (err) {
+    console.error('✗ Test error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ── Claude: email copy ────────────────────────────────────────
 async function generateEmailCopy(data) {
+  // Extract first name only
+  const firstName = (data.ceoName || 'there').split(' ')[0];
+
   const msg = await anthropic.messages.create({
     model:      'claude-sonnet-4-5',
     max_tokens: 500,
@@ -248,11 +272,12 @@ Context from research:
 - Strategic gaps found: ${data.pocStrategic || 'Not available'}
 
 Rules:
-- Founder-to-founder tone. Direct, no filler, no corporate pleasantries.
+- Start with: "Dear ${firstName},"
+- Founder-to-founder tone. Formal but direct. No filler, no corporate pleasantries.
 - 3 short paragraphs only.
-- Para 1: One specific observation about their current growth challenge — name something precise from the data.
-- Para 2: One sentence on what the attached brief contains and why it is relevant to them specifically.
-- Para 3: CTA — Write "The next step? A 30-minute conversation." then on a new line write a clean hyperlink as: Book your call → https://tidycal.com/gianni3/discovery-call
+- Para 1: One specific observation about their current growth challenge — name something precise from the data above.
+- Para 2: One sentence on what the attached strategy brief contains and why it is specifically relevant to them.
+- Para 3: "The next step? A 30-minute conversation." followed by a new line with: Book your call → https://tidycal.com/gianni3/discovery-call
 - Sign off: Gianni Candido / Founder, Omega Praxis
 - Return ONLY the email body. No subject line. No HTML. Plain text with line breaks.`
     }]
@@ -260,24 +285,26 @@ Rules:
   return msg.content[0].text;
 }
 
-// ── Resend HTTP API ───────────────────────────────────────────
-async function sendEmail(data, emailBody, pdfBuffer, recipientEmail, subjectPrefix = '') {
-  const apiKey  = process.env.RESEND_API_KEY;
+// ── Resend HTTP API — sends link, no attachment ───────────────
+async function sendEmail(data, emailBody, pdfUrl, recipientEmail, subjectPrefix = '') {
+  const apiKey = process.env.RESEND_API_KEY;
   if (!apiKey) throw new Error('RESEND_API_KEY not set');
 
-  const from     = process.env.SMTP_FROM || 'contact@omegapraxis.com';
-  const filename = `Omega-Praxis-Brief-${data.company.replace(/[^a-z0-9]/gi, '-')}.pdf`;
+  const from    = process.env.SMTP_FROM || 'contact@omegapraxis.com';
+  const subject = `${subjectPrefix}Growth brief for ${data.company} — Omega Praxis`;
+
+  // Append PDF download link to email body
+  const fullBody = `${emailBody}\n\n---\nYour strategy brief is ready to download:\n${pdfUrl}`;
 
   const res = await fetch('https://api.resend.com/emails', {
     method:  'POST',
     headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
     body:    JSON.stringify({
-      from:        `Gianni Candido | Omega Praxis <${from}>`,
-      to:          [recipientEmail],
-      reply_to:    from,
-      subject:     `${subjectPrefix}Growth brief for ${data.company} — Omega Praxis`,
-      text:        emailBody,
-      attachments: [{ filename, content: pdfBuffer.toString('base64') }]
+      from:     `Gianni Candido | Omega Praxis <${from}>`,
+      to:       [recipientEmail],
+      reply_to: from,
+      subject,
+      text:     fullBody
     })
   });
 
@@ -287,9 +314,7 @@ async function sendEmail(data, emailBody, pdfBuffer, recipientEmail, subjectPref
   return result;
 }
 
-function randomId() {
-  return Math.random().toString(36).slice(2, 12);
-}
+function randomId() { return Math.random().toString(36).slice(2, 12); }
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`Omega Praxis webhook on port ${PORT}`));

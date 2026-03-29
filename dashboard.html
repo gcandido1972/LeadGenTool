@@ -8,10 +8,10 @@
 <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Instrument+Serif:ital@0;1&family=DM+Sans:wght@300;400;500&family=Space+Grotesk:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
   :root {
-    --bg: #0e0e0f;
-    --surface: #141416;
-    --surface-2: #1c1c1f;
-    --surface-3: #242428;
+    --bg: #080808;
+    --surface: #0e0e0f;
+    --surface-2: #161618;
+    --surface-3: #1e1e21;
     --border: rgba(255,255,255,0.07);
     --border-hover: rgba(255,255,255,0.14);
     --text: #f0efe8;
@@ -973,9 +973,10 @@
     <span class="detail-close" onclick="closeDetail()">✕</span>
   </div>
   <div class="detail-body" id="detail-body"></div>
-  <div class="detail-actions">
-    <button class="btn btn-ghost" style="flex:1;" onclick="previewEmail(currentDetailId)">✉ Preview email</button>
-    <button class="btn btn-accent" style="flex:1;" id="detail-send-btn" onclick="sendFromDetail()">↗ Send</button>
+  <div class="detail-actions" style="flex-wrap:wrap;gap:8px;">
+    <button class="btn btn-ghost" style="flex:1;min-width:120px;" id="detail-pdf-btn" onclick="generatePdf(currentDetailId)">⬇ Download PDF</button>
+    <button class="btn btn-ghost" style="flex:1;min-width:120px;" onclick="previewEmail(currentDetailId)">✉ Preview email</button>
+    <button class="btn btn-accent" style="width:100%;" id="detail-send-btn" onclick="sendFromDetail()">↗ Send</button>
   </div>
 </div>
 
@@ -986,6 +987,9 @@
       <div>
         <div class="modal-title">Email preview</div>
         <div class="modal-subtitle" id="modal-recipient">—</div>
+        <div style="margin-top:6px;" id="modal-pdf-link-wrap" style="display:none;">
+          <a id="modal-pdf-link" href="#" target="_blank" style="font-size:11px;color:var(--accent);font-family:'DM Mono',monospace;text-decoration:none;">⬇ Download PDF brief</a>
+        </div>
       </div>
       <span class="modal-close" onclick="closeEmailModal()">✕</span>
     </div>
@@ -1957,6 +1961,50 @@ function sendFromDetail() {
   previewEmail(currentDetailId);
 }
 
+// ── PDF GENERATION ──
+async function generatePdf(id) {
+  const lead = leads.find(l => l.id === id);
+  if (!lead) return;
+  const base = getApiBase();
+  if (!base) { toast('Set Railway URL in Config first', 'error'); return; }
+
+  const btn = document.getElementById('detail-pdf-btn');
+  if (btn) { btn.innerHTML = '<span style="display:inline-block;animation:spin 0.8s linear infinite;">⟳</span> Generating...'; btn.disabled = true; }
+
+  try {
+    const res = await fetch(`${base}/generate-pdf`, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({
+        leadId:             lead.id,
+        company:            lead.company,
+        email:              lead.email,
+        ceo_name:           lead.name,
+        poc_brief:          lead.pocBrief          || '',
+        poc_strategic:      lead.pocStrategic      || '',
+        ceo_pain_points:    lead.ceoPainPoints     || '',
+        linkedin_summary:   lead.linkedinSummary   || '',
+        founder_challenges: lead.founderChallenges || '',
+      })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'PDF generation failed');
+
+    // Store URL on lead object for reuse when sending
+    lead.pdfUrl = data.downloadUrl;
+    updateLeadInFirestore(lead.id, { pdfUrl: data.downloadUrl });
+
+    // Open PDF in new tab for download/review
+    window.open(data.downloadUrl, '_blank');
+    toast(`PDF ready — opened in new tab`, 'success');
+
+    if (btn) { btn.innerHTML = '⬇ Download PDF'; btn.disabled = false; }
+  } catch(e) {
+    toast('PDF failed: ' + e.message, 'error');
+    if (btn) { btn.innerHTML = '⬇ Download PDF'; btn.disabled = false; }
+  }
+}
+
 // ── EMAIL PREVIEW MODAL ──
 let previewLeadId = null;
 
@@ -1973,6 +2021,15 @@ async function previewEmail(id) {
   document.getElementById('modal-loading').style.display  = 'block';
   document.getElementById('modal-content').style.display  = 'none';
   document.getElementById('modal-recipient').textContent  = `To: ${lead.email} — ${lead.company}`;
+  // Show existing PDF link if already generated
+  const pdfLinkWrap = document.getElementById('modal-pdf-link-wrap');
+  const pdfLink     = document.getElementById('modal-pdf-link');
+  if (lead.pdfUrl) {
+    pdfLink.href = lead.pdfUrl;
+    pdfLinkWrap.style.display = 'block';
+  } else {
+    pdfLinkWrap.style.display = 'none';
+  }
   document.getElementById('modal-subject').textContent    = `Subject: Growth brief for ${lead.company} — Omega Praxis`;
   document.getElementById('modal-send-btn').disabled      = true;
   document.getElementById('modal-test-btn').disabled      = true;
@@ -2035,6 +2092,7 @@ async function sendFromModal(isTest) {
         linkedin_summary:   lead.linkedinSummary   || '',
         founder_challenges: lead.founderChallenges || '',
         _previewBody:       editedBody,
+        _pdfUrl:            lead.pdfUrl            || '',
         _testOverride:      isTest,
       })
     });
