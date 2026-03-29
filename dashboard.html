@@ -1,0 +1,1331 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Omega Praxis — Outreach Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Instrument+Serif:ital@0;1&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0e0e0f;
+    --surface: #141416;
+    --surface-2: #1c1c1f;
+    --surface-3: #242428;
+    --border: rgba(255,255,255,0.07);
+    --border-hover: rgba(255,255,255,0.14);
+    --text: #f0efe8;
+    --text-2: #9b9a95;
+    --text-3: #5e5d59;
+    --accent: #c8e86b;
+    --accent-dim: rgba(200,232,107,0.12);
+    --accent-border: rgba(200,232,107,0.3);
+    --danger: #f07a7a;
+    --danger-dim: rgba(240,122,122,0.1);
+    --info: #6baee8;
+    --info-dim: rgba(107,174,232,0.1);
+    --amber: #e8b96b;
+    --amber-dim: rgba(232,185,107,0.1);
+    --success: #6be8a8;
+    --success-dim: rgba(107,232,168,0.1);
+    --radius: 8px;
+    --radius-lg: 12px;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'DM Sans', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    font-size: 14px;
+    line-height: 1.5;
+  }
+
+  /* ── HEADER ── */
+  .header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 18px 32px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+
+  .logo {
+    font-family: 'Instrument Serif', serif;
+    font-size: 20px;
+    letter-spacing: -0.01em;
+    color: var(--text);
+  }
+
+  .logo span {
+    color: var(--accent);
+  }
+
+  .header-right {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .webhook-config {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .webhook-config input {
+    width: 280px;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 7px 12px;
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    color: var(--text-2);
+    outline: none;
+    transition: border-color 0.15s;
+  }
+
+  .webhook-config input:focus {
+    border-color: var(--border-hover);
+    color: var(--text);
+  }
+
+  .webhook-config input::placeholder { color: var(--text-3); }
+
+  .dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--text-3);
+    flex-shrink: 0;
+  }
+
+  .dot.connected { background: var(--success); box-shadow: 0 0 6px rgba(107,232,168,0.4); }
+
+  /* ── TABS ── */
+  .tabs {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    padding: 16px 32px 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .tab {
+    padding: 8px 18px 12px;
+    font-size: 13px;
+    font-weight: 400;
+    color: var(--text-3);
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    transition: color 0.15s, border-color 0.15s;
+    user-select: none;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+  }
+
+  .tab:hover { color: var(--text-2); }
+  .tab.active { color: var(--text); border-bottom-color: var(--accent); }
+
+  .tab .badge {
+    background: var(--surface-3);
+    color: var(--text-2);
+    font-size: 10px;
+    font-family: 'DM Mono', monospace;
+    padding: 2px 7px;
+    border-radius: 20px;
+    line-height: 1.4;
+  }
+
+  .tab.active .badge { background: var(--accent-dim); color: var(--accent); }
+
+  /* ── TOOLBAR ── */
+  .toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 32px;
+    gap: 12px;
+  }
+
+  .toolbar-left {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .search-wrap {
+    position: relative;
+  }
+
+  .search-wrap input {
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 7px 12px 7px 34px;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 13px;
+    color: var(--text);
+    outline: none;
+    width: 240px;
+    transition: border-color 0.15s;
+  }
+
+  .search-wrap input:focus { border-color: var(--border-hover); }
+  .search-wrap input::placeholder { color: var(--text-3); }
+
+  .search-icon {
+    position: absolute;
+    left: 11px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--text-3);
+    font-size: 14px;
+    pointer-events: none;
+  }
+
+  select {
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 7px 12px;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 13px;
+    color: var(--text-2);
+    outline: none;
+    cursor: pointer;
+    appearance: none;
+    -webkit-appearance: none;
+  }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 7px 16px;
+    border-radius: var(--radius);
+    font-family: 'DM Sans', sans-serif;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    border: 1px solid;
+    transition: all 0.15s;
+    white-space: nowrap;
+  }
+
+  .btn-ghost {
+    background: transparent;
+    border-color: var(--border);
+    color: var(--text-2);
+  }
+
+  .btn-ghost:hover {
+    border-color: var(--border-hover);
+    color: var(--text);
+    background: var(--surface-2);
+  }
+
+  .btn-accent {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #111;
+  }
+
+  .btn-accent:hover { background: #d8f87a; }
+  .btn-accent:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  .btn-danger {
+    background: transparent;
+    border-color: rgba(240,122,122,0.3);
+    color: var(--danger);
+  }
+
+  .btn-danger:hover { background: var(--danger-dim); }
+
+  /* ── STATS BAR ── */
+  .stats-bar {
+    display: flex;
+    gap: 1px;
+    padding: 0 32px 16px;
+  }
+
+  .stat {
+    background: var(--surface-2);
+    padding: 12px 18px;
+    flex: 1;
+    first-child { border-radius: var(--radius) 0 0 var(--radius); }
+  }
+
+  .stat:first-child { border-radius: var(--radius) 0 0 var(--radius); }
+  .stat:last-child { border-radius: 0 var(--radius) var(--radius) 0; }
+
+  .stat-label {
+    font-size: 11px;
+    font-family: 'DM Mono', monospace;
+    color: var(--text-3);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin-bottom: 4px;
+  }
+
+  .stat-value {
+    font-size: 22px;
+    font-weight: 300;
+    color: var(--text);
+  }
+
+  .stat-value.accent { color: var(--accent); }
+  .stat-value.info { color: var(--info); }
+  .stat-value.amber { color: var(--amber); }
+
+  /* ── TABLE ── */
+  .table-wrap {
+    padding: 0 32px 32px;
+    overflow-x: auto;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+  }
+
+  thead tr {
+    background: var(--surface-2);
+  }
+
+  th {
+    padding: 11px 16px;
+    text-align: left;
+    font-size: 11px;
+    font-family: 'DM Mono', monospace;
+    font-weight: 500;
+    color: var(--text-3);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    border-bottom: 1px solid var(--border);
+    white-space: nowrap;
+  }
+
+  th:first-child { padding-left: 20px; }
+
+  tbody tr {
+    background: var(--surface);
+    transition: background 0.1s;
+  }
+
+  tbody tr:hover { background: var(--surface-2); }
+
+  tbody tr.selected { background: rgba(200,232,107,0.04); }
+
+  tbody tr:last-child td { border-bottom: none; }
+
+  td {
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--border);
+    vertical-align: middle;
+    font-size: 13px;
+  }
+
+  td:first-child { padding-left: 20px; }
+
+  /* ── CHECKBOX ── */
+  input[type="checkbox"] {
+    width: 15px;
+    height: 15px;
+    border: 1px solid var(--border-hover);
+    border-radius: 4px;
+    background: var(--surface-3);
+    cursor: pointer;
+    accent-color: var(--accent);
+  }
+
+  /* ── LEAD CELL ── */
+  .lead-info { display: flex; flex-direction: column; gap: 2px; }
+
+  .lead-name {
+    font-weight: 500;
+    color: var(--text);
+    display: flex;
+    align-items: center;
+    gap: 7px;
+  }
+
+  .lead-company {
+    font-size: 12px;
+    color: var(--text-2);
+    display: flex;
+    align-items: center;
+    gap: 5px;
+  }
+
+  .li-link {
+    font-size: 10px;
+    color: var(--info);
+    text-decoration: none;
+    opacity: 0.7;
+    transition: opacity 0.15s;
+  }
+
+  .li-link:hover { opacity: 1; }
+
+  /* ── SCORE BADGE ── */
+  .score {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    font-family: 'DM Mono', monospace;
+    font-size: 12px;
+    font-weight: 500;
+  }
+
+  .score-9, .score-10 { background: rgba(200,232,107,0.15); color: var(--accent); border: 1px solid var(--accent-border); }
+  .score-8 { background: rgba(107,174,232,0.12); color: var(--info); border: 1px solid rgba(107,174,232,0.25); }
+  .score-7 { background: rgba(232,185,107,0.12); color: var(--amber); border: 1px solid rgba(232,185,107,0.25); }
+
+  /* ── TIER BADGE ── */
+  .tier {
+    display: inline-flex;
+    padding: 3px 10px;
+    border-radius: 20px;
+    font-size: 11px;
+    font-family: 'DM Mono', monospace;
+    white-space: nowrap;
+  }
+
+  .tier-1 { background: var(--accent-dim); color: var(--accent); border: 1px solid var(--accent-border); }
+  .tier-2 { background: var(--amber-dim); color: var(--amber); border: 1px solid rgba(232,185,107,0.25); }
+
+  /* ── STATUS BADGE ── */
+  .status {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 3px 10px;
+    border-radius: 20px;
+    font-size: 11px;
+    white-space: nowrap;
+  }
+
+  .status::before {
+    content: '';
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  .status-pending { background: var(--surface-3); color: var(--text-3); }
+  .status-pending::before { background: var(--text-3); }
+  .status-sent { background: var(--info-dim); color: var(--info); }
+  .status-sent::before { background: var(--info); }
+  .status-opened { background: var(--amber-dim); color: var(--amber); }
+  .status-opened::before { background: var(--amber); }
+  .status-replied { background: var(--success-dim); color: var(--success); }
+  .status-replied::before { background: var(--success); }
+
+  /* ── AUDIT TEXTAREA ── */
+  .audit-cell { min-width: 340px; max-width: 420px; }
+
+  .audit-wrap {
+    position: relative;
+  }
+
+  .audit-text {
+    width: 100%;
+    background: var(--surface-3);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 9px 12px;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 12px;
+    color: var(--text-2);
+    resize: vertical;
+    outline: none;
+    min-height: 72px;
+    max-height: 180px;
+    line-height: 1.55;
+    transition: border-color 0.15s, color 0.15s;
+  }
+
+  .audit-text:focus {
+    border-color: var(--accent-border);
+    color: var(--text);
+    background: var(--surface-2);
+  }
+
+  .char-count {
+    position: absolute;
+    bottom: 6px;
+    right: 8px;
+    font-size: 10px;
+    font-family: 'DM Mono', monospace;
+    color: var(--text-3);
+    pointer-events: none;
+  }
+
+  /* ── ACTIONS ── */
+  .actions { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+
+  .btn-sm {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 5px 12px;
+    border-radius: var(--radius);
+    font-family: 'DM Sans', sans-serif;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    border: 1px solid;
+    transition: all 0.15s;
+  }
+
+  .btn-sm-send {
+    background: var(--accent-dim);
+    border-color: var(--accent-border);
+    color: var(--accent);
+  }
+
+  .btn-sm-send:hover { background: rgba(200,232,107,0.22); }
+  .btn-sm-send:disabled { opacity: 0.35; cursor: not-allowed; }
+
+  .btn-sm-skip {
+    background: transparent;
+    border-color: var(--border);
+    color: var(--text-3);
+  }
+
+  .btn-sm-skip:hover { border-color: var(--border-hover); color: var(--danger); }
+
+  .spin {
+    display: inline-block;
+    animation: spin 0.8s linear infinite;
+  }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ── TOAST ── */
+  #toast-container {
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    z-index: 1000;
+    pointer-events: none;
+  }
+
+  .toast {
+    background: var(--surface-3);
+    border: 1px solid var(--border-hover);
+    border-radius: var(--radius-lg);
+    padding: 12px 18px;
+    font-size: 13px;
+    color: var(--text);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    max-width: 340px;
+    animation: toastIn 0.2s ease;
+    pointer-events: all;
+  }
+
+  .toast.success { border-color: rgba(107,232,168,0.3); }
+  .toast.error { border-color: rgba(240,122,122,0.3); }
+  .toast-icon { font-size: 16px; }
+
+  @keyframes toastIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+
+  /* ── SEND ALL BAR ── */
+  .bulk-bar {
+    display: none;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 32px;
+    background: var(--accent-dim);
+    border-bottom: 1px solid var(--accent-border);
+    border-top: 1px solid var(--accent-border);
+    animation: slideDown 0.2s ease;
+  }
+
+  .bulk-bar.visible { display: flex; }
+
+  @keyframes slideDown { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: translateY(0); } }
+
+  .bulk-info { font-size: 13px; color: var(--accent); font-weight: 500; }
+  .bulk-info span { color: var(--text-2); font-weight: 400; }
+
+  /* ── REPLY THREAD ── */
+  .reply-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 18px 20px;
+    transition: border-color 0.15s;
+  }
+
+  .reply-card:hover { border-color: var(--border-hover); }
+
+  .reply-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    margin-bottom: 12px;
+  }
+
+  .reply-meta { display: flex; flex-direction: column; gap: 3px; }
+  .reply-name { font-weight: 500; color: var(--text); font-size: 14px; }
+  .reply-company { font-size: 12px; color: var(--text-2); }
+  .reply-date { font-size: 11px; font-family: 'DM Mono', monospace; color: var(--text-3); }
+
+  .reply-preview {
+    font-size: 13px;
+    color: var(--text-2);
+    line-height: 1.6;
+    margin-bottom: 14px;
+    padding: 10px 14px;
+    background: var(--surface-2);
+    border-left: 2px solid var(--border-hover);
+    border-radius: 0 var(--radius) var(--radius) 0;
+  }
+
+  .reply-actions { display: flex; gap: 8px; }
+
+  .tabs-content { display: none; }
+  .tabs-content.active { display: block; }
+
+  /* ── EMPTY STATE ── */
+  .empty {
+    text-align: center;
+    padding: 60px 32px;
+    color: var(--text-3);
+  }
+
+  .empty-icon { font-size: 32px; margin-bottom: 12px; }
+  .empty-title { font-size: 15px; color: var(--text-2); margin-bottom: 6px; }
+  .empty-sub { font-size: 13px; }
+
+  /* ── CONFIG PANEL ── */
+  .config-panel {
+    position: fixed;
+    right: -380px;
+    top: 0;
+    width: 380px;
+    height: 100vh;
+    background: var(--surface);
+    border-left: 1px solid var(--border);
+    padding: 24px;
+    transition: right 0.25s ease;
+    z-index: 200;
+    overflow-y: auto;
+  }
+
+  .config-panel.open { right: 0; }
+  .config-title { font-size: 15px; font-weight: 500; margin-bottom: 20px; display: flex; align-items: center; justify-content: space-between; }
+  .config-close { cursor: pointer; color: var(--text-3); font-size: 18px; transition: color 0.15s; }
+  .config-close:hover { color: var(--text); }
+
+  .config-section { margin-bottom: 24px; }
+  .config-label { font-size: 11px; font-family: 'DM Mono', monospace; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-3); margin-bottom: 8px; }
+  .config-input { width: 100%; background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius); padding: 9px 12px; font-family: 'DM Mono', monospace; font-size: 12px; color: var(--text); outline: none; }
+  .config-input:focus { border-color: var(--border-hover); }
+
+  .config-note { font-size: 12px; color: var(--text-3); margin-top: 6px; line-height: 1.5; }
+
+  /* ── OVERLAY ── */
+  .overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.5);
+    z-index: 150;
+  }
+  .overlay.visible { display: block; }
+
+  /* ── SCROLLBAR ── */
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--surface-3); border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--border-hover); }
+</style>
+</head>
+<body>
+
+<!-- HEADER -->
+<header class="header">
+  <div class="logo">Omega<span>·</span>Praxis <span style="font-size:12px;font-family:'DM Mono',monospace;color:var(--text-3);font-style:normal;margin-left:8px;">outreach</span></div>
+  <div class="header-right">
+    <div class="webhook-config">
+      <div class="dot connected" id="webhook-dot" title="Webhook status"></div>
+      <input type="text" id="webhook-url-input" placeholder="https://your-n8n.instance/webhook/..." value="">
+    </div>
+    <button class="btn btn-ghost" onclick="toggleConfig()">⚙ Config</button>
+    <button class="btn btn-ghost" onclick="loadDemoData()">↻ Load demo</button>
+  </div>
+</header>
+
+<!-- TABS -->
+<nav class="tabs">
+  <div class="tab active" onclick="switchTab('queue')" id="tab-queue">
+    Queue <span class="badge" id="badge-queue">0</span>
+  </div>
+  <div class="tab" onclick="switchTab('sent')" id="tab-sent">
+    Sent <span class="badge" id="badge-sent">0</span>
+  </div>
+  <div class="tab" onclick="switchTab('replies')" id="tab-replies">
+    Replies <span class="badge" id="badge-replies">0</span>
+  </div>
+</nav>
+
+<!-- TAB: QUEUE -->
+<div class="tabs-content active" id="content-queue">
+
+  <!-- STATS -->
+  <div class="stats-bar" style="padding-top:16px;">
+    <div class="stat">
+      <div class="stat-label">Total leads</div>
+      <div class="stat-value" id="stat-total">0</div>
+    </div>
+    <div class="stat">
+      <div class="stat-label">Tier 1</div>
+      <div class="stat-value accent" id="stat-t1">0</div>
+    </div>
+    <div class="stat">
+      <div class="stat-label">Tier 2</div>
+      <div class="stat-value amber" id="stat-t2">0</div>
+    </div>
+    <div class="stat">
+      <div class="stat-label">Selected</div>
+      <div class="stat-value info" id="stat-selected">0</div>
+    </div>
+    <div class="stat">
+      <div class="stat-label">Sent today</div>
+      <div class="stat-value" id="stat-sent-today">0</div>
+    </div>
+  </div>
+
+  <!-- TOOLBAR -->
+  <div class="toolbar">
+    <div class="toolbar-left">
+      <div class="search-wrap">
+        <span class="search-icon">⌕</span>
+        <input type="text" placeholder="Search leads..." id="search-input" oninput="filterLeads()">
+      </div>
+      <select id="tier-filter" onchange="filterLeads()">
+        <option value="">All tiers</option>
+        <option value="1">Tier 1</option>
+        <option value="2">Tier 2</option>
+      </select>
+      <select id="status-filter" onchange="filterLeads()">
+        <option value="">All statuses</option>
+        <option value="pending">Pending</option>
+        <option value="sent">Sent</option>
+        <option value="opened">Opened</option>
+      </select>
+    </div>
+    <div style="display:flex;gap:8px;">
+      <button class="btn btn-ghost" onclick="selectAll()">Select all</button>
+      <button class="btn btn-ghost" onclick="importFromClipboard()" title="Paste JSON from Clay">⊕ Import JSON</button>
+    </div>
+  </div>
+
+  <!-- BULK BAR -->
+  <div class="bulk-bar" id="bulk-bar">
+    <div class="bulk-info">
+      <span id="bulk-count">0</span> leads selected <span>— review audits before sending</span>
+    </div>
+    <div style="display:flex;gap:8px;">
+      <button class="btn btn-ghost btn-sm" onclick="deselectAll()">Deselect all</button>
+      <button class="btn btn-accent" id="bulk-send-btn" onclick="sendSelected()">
+        ↗ Send selected
+      </button>
+    </div>
+  </div>
+
+  <!-- TABLE -->
+  <div class="table-wrap">
+    <table id="leads-table">
+      <thead>
+        <tr>
+          <th><input type="checkbox" id="select-all-cb" onchange="toggleSelectAll(this)"></th>
+          <th>Lead</th>
+          <th>Email</th>
+          <th>Score</th>
+          <th>Tier</th>
+          <th>Employees</th>
+          <th>Status</th>
+          <th class="audit-cell">Audit message</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody id="leads-tbody">
+        <tr>
+          <td colspan="9">
+            <div class="empty">
+              <div class="empty-icon">◈</div>
+              <div class="empty-title">No leads loaded</div>
+              <div class="empty-sub">Click "Load demo" to see the dashboard in action, or import JSON from Clay</div>
+            </div>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- TAB: SENT -->
+<div class="tabs-content" id="content-sent">
+  <div class="table-wrap" style="padding-top:24px;">
+    <table id="sent-table">
+      <thead>
+        <tr>
+          <th>Lead</th>
+          <th>Email</th>
+          <th>Score</th>
+          <th>Sent at</th>
+          <th>Status</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody id="sent-tbody">
+        <tr><td colspan="6"><div class="empty"><div class="empty-icon">◈</div><div class="empty-title">No emails sent yet</div></div></td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- TAB: REPLIES -->
+<div class="tabs-content" id="content-replies">
+  <div style="padding:24px 32px;" id="replies-grid">
+    <div class="empty">
+      <div class="empty-icon">✉</div>
+      <div class="empty-title">No replies yet</div>
+      <div class="empty-sub">When leads reply (detected via n8n IMAP trigger), they appear here for manual follow-up</div>
+    </div>
+  </div>
+</div>
+
+<!-- CONFIG PANEL -->
+<div class="overlay" id="overlay" onclick="toggleConfig()"></div>
+<div class="config-panel" id="config-panel">
+  <div class="config-title">
+    Configuration
+    <span class="config-close" onclick="toggleConfig()">✕</span>
+  </div>
+
+  <div class="config-section">
+    <div class="config-label">n8n Send Webhook URL</div>
+    <input class="config-input" type="text" id="cfg-send-webhook" placeholder="https://n8n.yourdomain.com/webhook/send-audit">
+    <div class="config-note">POST endpoint. Receives: { company, email, auditMessage, leadId }</div>
+  </div>
+
+  <div class="config-section">
+    <div class="config-label">n8n Replies Webhook URL</div>
+    <input class="config-input" type="text" id="cfg-replies-webhook" placeholder="https://n8n.yourdomain.com/webhook/get-replies">
+    <div class="config-note">GET endpoint. Returns array of reply objects.</div>
+  </div>
+
+  <div class="config-section">
+    <div class="config-label">From email</div>
+    <input class="config-input" type="text" id="cfg-from-email" value="contact@omegapraxis.com">
+  </div>
+
+  <div class="config-section">
+    <div class="config-label">Send delay between emails (ms)</div>
+    <input class="config-input" type="number" id="cfg-delay" value="2500" min="1000" max="30000">
+    <div class="config-note">Delay between bulk sends. Min 1000ms recommended.</div>
+  </div>
+
+  <div class="config-section">
+    <div class="config-label">Poll replies every (seconds)</div>
+    <input class="config-input" type="number" id="cfg-poll" value="60" min="30">
+    <div class="config-note">How often to check n8n for new replies.</div>
+  </div>
+
+  <div style="display:flex;gap:8px;margin-top:8px;">
+    <button class="btn btn-accent" style="flex:1;" onclick="saveConfig()">Save config</button>
+  </div>
+
+  <div style="margin-top:32px;padding-top:24px;border-top:1px solid var(--border);">
+    <div class="config-label" style="margin-bottom:12px;">Import leads (JSON)</div>
+    <div class="config-note" style="margin-bottom:10px;">Paste a JSON array of lead objects exported from Clay. Each object needs: name, company, email, score, tier, employees, auditMessage, linkedinUrl (optional), status (optional).</div>
+    <textarea class="config-input" id="json-import-area" rows="6" placeholder='[{"name":"John Smith","company":"Acme","email":"john@acme.com","score":9,"tier":1,"employees":32,"auditMessage":"Your GTM positioning..."}]' style="resize:vertical;line-height:1.5;font-size:11px;"></textarea>
+    <button class="btn btn-ghost" style="width:100%;margin-top:8px;" onclick="importJSON()">↓ Import leads</button>
+  </div>
+</div>
+
+<!-- TOAST CONTAINER -->
+<div id="toast-container"></div>
+
+<script>
+// ── STATE ──
+let leads = [];
+let sentLeads = [];
+let replies = [];
+// ── Set your Railway URL here once, or use the Config panel ──
+const RAILWAY_URL = ''; // e.g. https://leadgentool-production.up.railway.app
+
+let config = {
+  sendWebhook: RAILWAY_URL,
+  repliesWebhook: '',
+  fromEmail: 'contact@omegapraxis.com',
+  delay: 2500,
+  pollInterval: 60
+};
+let pollTimer = null;
+let sentTodayCount = 0;
+
+// ── INIT ──
+window.addEventListener('DOMContentLoaded', () => {
+  loadConfig();
+  syncConfig();
+  startPolling();
+  updateStats();
+});
+
+function loadConfig() {
+  const saved = localStorage.getItem('op-config');
+  if (saved) {
+    try {
+      const parsed = JSON.parse(saved);
+      config = { ...config, ...parsed };
+      // If no webhook saved yet, fall back to the hardcoded RAILWAY_URL
+      if (!config.sendWebhook && RAILWAY_URL) config.sendWebhook = RAILWAY_URL;
+    } catch(e) {}
+  }
+  // First-run: if no webhook configured at all, show config panel automatically
+  if (!config.sendWebhook) {
+    window.addEventListener('DOMContentLoaded', () => {
+      setTimeout(() => {
+        toast('Paste your Railway URL in Config to get started', '');
+        toggleConfig();
+      }, 600);
+    }, { once: true });
+  }
+}
+
+function syncConfig() {
+  document.getElementById('cfg-send-webhook').value = config.sendWebhook || '';
+  document.getElementById('cfg-replies-webhook').value = config.repliesWebhook || '';
+  document.getElementById('cfg-from-email').value = config.fromEmail || '';
+  document.getElementById('cfg-delay').value = config.delay || 2500;
+  document.getElementById('cfg-poll').value = config.pollInterval || 60;
+  const headerInput = document.getElementById('webhook-url-input');
+  if (config.sendWebhook) headerInput.value = config.sendWebhook;
+  headerInput.addEventListener('input', () => {
+    config.sendWebhook = headerInput.value;
+    document.getElementById('cfg-send-webhook').value = headerInput.value;
+    document.getElementById('webhook-dot').className = 'dot ' + (headerInput.value ? 'connected' : '');
+  });
+  document.getElementById('webhook-dot').className = 'dot ' + (config.sendWebhook ? 'connected' : '');
+}
+
+function saveConfig() {
+  config.sendWebhook = document.getElementById('cfg-send-webhook').value.trim();
+  config.repliesWebhook = document.getElementById('cfg-replies-webhook').value.trim();
+  config.fromEmail = document.getElementById('cfg-from-email').value.trim();
+  config.delay = parseInt(document.getElementById('cfg-delay').value) || 2500;
+  config.pollInterval = parseInt(document.getElementById('cfg-poll').value) || 60;
+  localStorage.setItem('op-config', JSON.stringify(config));
+  syncConfig();
+  toggleConfig();
+  toast('Config saved', 'success');
+  startPolling();
+}
+
+// ── TABS ──
+function switchTab(name) {
+  ['queue','sent','replies'].forEach(t => {
+    document.getElementById('tab-' + t).classList.toggle('active', t === name);
+    document.getElementById('content-' + t).classList.toggle('active', t === name);
+  });
+}
+
+// ── CONFIG PANEL ──
+function toggleConfig() {
+  document.getElementById('config-panel').classList.toggle('open');
+  document.getElementById('overlay').classList.toggle('visible');
+}
+
+// ── DEMO DATA ──
+function loadDemoData() {
+  leads = [
+    { id: uid(), name: 'Sheldon Mydat', company: 'Suppeco', email: 'sheldon@suppeco.com', score: 9, tier: 1, employees: 28, status: 'pending', linkedinUrl: 'https://linkedin.com/in/sheldonmydat', auditMessage: 'Your supply chain resilience platform has strong signal-to-noise in the ESG procurement space, but your GTM is built around conference visibility rather than pipeline. The 90-day opportunity: a content engine that converts your Tier 1 procurement buyers before they compare you against Resilinc.\n\nThe next step? A 30-minute conversation.', checked: false },
+    { id: uid(), name: 'Brandon Lloyd', company: 'Forward', email: 'brandon@forward.io', score: 9, tier: 1, employees: 34, status: 'pending', linkedinUrl: 'https://linkedin.com/in/brandonlloyd', auditMessage: 'Forward has a compelling async video pitch, but your outbound motion is still founder-led with no repeatable system. The gap between your ICP awareness and pipeline conversion is fixable in one quarter.\n\nThe next step? A 30-minute conversation.', checked: false },
+    { id: uid(), name: 'Greg Lewis', company: 'revVana', email: 'greg@revvana.com', score: 8, tier: 1, employees: 21, status: 'pending', linkedinUrl: 'https://linkedin.com/in/greglewis', auditMessage: 'RevVana solves a real CRO pain — Salesforce revenue planning that actually works — but your messaging leads with the tool rather than the outcome. A positioning pivot toward "predictable pipeline for RevOps teams" could shorten your deal cycle significantly.\n\nThe next step? A 30-minute conversation.', checked: false },
+    { id: uid(), name: 'James Clarkson', company: 'Adventoris', email: 'james@adventoris.com', score: 8, tier: 1, employees: 19, status: 'sent', linkedinUrl: '', auditMessage: 'Your channel partner model is your moat, but it is invisible on your website. Prospects see a generic platform; channel partners see a strategic growth lever. Aligning these two narratives could unlock both direct and indirect revenue faster.\n\nThe next step? A 30-minute conversation.', checked: false },
+    { id: uid(), name: 'Bernard Edwards', company: 'Hublsoft', email: 'bernard@hublsoft.com', score: 7, tier: 2, employees: 44, status: 'pending', linkedinUrl: 'https://linkedin.com/in/bernardedwards', auditMessage: 'Hublsoft operates in a crowded hospitality SaaS market but your competitive edge — deep PMS integrations — is buried three clicks deep. Surfacing this as your primary differentiation in all top-of-funnel touchpoints is the highest-leverage move right now.\n\nThe next step? A 30-minute conversation.', checked: false },
+    { id: uid(), name: 'Sophie Martens', company: 'Klanik', email: 'sophie@klanik.io', score: 9, tier: 1, employees: 38, status: 'pending', linkedinUrl: 'https://linkedin.com/in/sophiemartens', auditMessage: 'You have product-market fit in Benelux but no scalable content engine to carry that momentum into DACH. Your LinkedIn is founder-first and it shows — a structured thought leadership programme mapped to your ICP pain points could 3x top-of-funnel within 60 days.\n\nThe next step? A 30-minute conversation.', checked: false },
+  ];
+  sentLeads = [
+    { id: uid(), name: 'Marko Perić', company: 'Odrazi', email: 'marko@odrazi.hr', score: 9, tier: 1, status: 'opened', sentAt: new Date(Date.now() - 86400000 * 2).toISOString() },
+    { id: uid(), name: 'Lucía Varga', company: 'Fiorelda', email: 'lucia@fiorelda.es', score: 8, tier: 1, status: 'replied', sentAt: new Date(Date.now() - 86400000).toISOString() },
+  ];
+  replies = [
+    { id: uid(), name: 'Lucía Varga', company: 'Fiorelda', email: 'lucia@fiorelda.es', receivedAt: new Date(Date.now() - 3600000 * 4).toISOString(), preview: "Thanks for this Gianni — I actually just shared it with my co-founder. The gap you called out on our sales funnel is exactly what we've been struggling to articulate. Would love to find 30 minutes." }
+  ];
+  renderAll();
+  toast('6 leads loaded', 'success');
+}
+
+// ── RENDER ──
+function renderAll() {
+  renderQueue();
+  renderSent();
+  renderReplies();
+  updateStats();
+}
+
+function filterLeads() {
+  renderQueue();
+}
+
+function getFilteredLeads() {
+  const q = document.getElementById('search-input').value.toLowerCase();
+  const tier = document.getElementById('tier-filter').value;
+  const status = document.getElementById('status-filter').value;
+  return leads.filter(l => {
+    const matchQ = !q || l.name.toLowerCase().includes(q) || l.company.toLowerCase().includes(q) || l.email.toLowerCase().includes(q);
+    const matchTier = !tier || String(l.tier) === tier;
+    const matchStatus = !status || l.status === status;
+    return matchQ && matchTier && matchStatus;
+  });
+}
+
+function renderQueue() {
+  const tbody = document.getElementById('leads-tbody');
+  const filtered = getFilteredLeads();
+  if (!filtered.length) {
+    tbody.innerHTML = `<tr><td colspan="9"><div class="empty"><div class="empty-icon">◈</div><div class="empty-title">${leads.length ? 'No leads match filters' : 'No leads loaded'}</div><div class="empty-sub">${leads.length ? 'Try adjusting search or filters' : 'Click "Load demo" or import JSON'}</div></div></td></tr>`;
+    return;
+  }
+  tbody.innerHTML = filtered.map(l => `
+    <tr class="${l.checked ? 'selected' : ''}" id="row-${l.id}">
+      <td><input type="checkbox" ${l.checked ? 'checked' : ''} onchange="toggleCheck('${l.id}', this)"></td>
+      <td>
+        <div class="lead-info">
+          <div class="lead-name">
+            ${esc(l.name)}
+            ${l.linkedinUrl ? `<a class="li-link" href="${l.linkedinUrl}" target="_blank" title="Open LinkedIn">LI↗</a>` : ''}
+          </div>
+          <div class="lead-company">${esc(l.company)}</div>
+        </div>
+      </td>
+      <td style="font-family:'DM Mono',monospace;font-size:12px;color:var(--text-2);">${esc(l.email)}</td>
+      <td><span class="score score-${l.score}">${l.score}</span></td>
+      <td><span class="tier tier-${l.tier}">T${l.tier}</span></td>
+      <td style="font-family:'DM Mono',monospace;font-size:12px;color:var(--text-2);">${l.employees}</td>
+      <td><span class="status status-${l.status}">${l.status}</span></td>
+      <td class="audit-cell">
+        <div class="audit-wrap">
+          <textarea class="audit-text" id="audit-${l.id}" oninput="updateAudit('${l.id}', this); updateCharCount('${l.id}')">${esc(l.auditMessage || '')}</textarea>
+          <span class="char-count" id="cc-${l.id}">${(l.auditMessage || '').length}</span>
+        </div>
+      </td>
+      <td>
+        <div class="actions">
+          <button class="btn-sm btn-sm-send" id="sendbtn-${l.id}" onclick="sendSingle('${l.id}')" ${l.status !== 'pending' ? 'disabled' : ''} title="${l.status !== 'pending' ? 'Already sent' : 'Send audit email'}">
+            ${l.status === 'pending' ? '↗ Send' : '✓ Sent'}
+          </button>
+          <button class="btn-sm btn-sm-skip" onclick="skipLead('${l.id}')" title="Remove from queue">✕</button>
+        </div>
+      </td>
+    </tr>
+  `).join('');
+  updateStats();
+}
+
+function renderSent() {
+  const tbody = document.getElementById('sent-tbody');
+  const all = [...sentLeads, ...leads.filter(l => l.status !== 'pending')];
+  if (!all.length) {
+    tbody.innerHTML = `<tr><td colspan="6"><div class="empty"><div class="empty-icon">◈</div><div class="empty-title">No emails sent yet</div></div></td></tr>`;
+    return;
+  }
+  tbody.innerHTML = all.map(l => `
+    <tr>
+      <td><div class="lead-info"><div class="lead-name">${esc(l.name)}</div><div class="lead-company">${esc(l.company)}</div></div></td>
+      <td style="font-family:'DM Mono',monospace;font-size:12px;color:var(--text-2);">${esc(l.email)}</td>
+      <td><span class="score score-${l.score}">${l.score}</span></td>
+      <td style="font-size:12px;font-family:'DM Mono',monospace;color:var(--text-3);">${l.sentAt ? fmtDate(l.sentAt) : '—'}</td>
+      <td><span class="status status-${l.status}">${l.status}</span></td>
+      <td><button class="btn-sm btn-sm-skip" onclick="markReplied('${l.id}')">Mark replied</button></td>
+    </tr>
+  `).join('');
+}
+
+function renderReplies() {
+  const grid = document.getElementById('replies-grid');
+  if (!replies.length) {
+    grid.innerHTML = `<div class="empty"><div class="empty-icon">✉</div><div class="empty-title">No replies yet</div><div class="empty-sub">Replies detected via n8n IMAP trigger will appear here</div></div>`;
+    return;
+  }
+  grid.innerHTML = `<div style="display:flex;flex-direction:column;gap:12px;">${replies.map(r => `
+    <div class="reply-card">
+      <div class="reply-header">
+        <div class="reply-meta">
+          <div class="reply-name">${esc(r.name)}</div>
+          <div class="reply-company">${esc(r.company)} · ${esc(r.email)}</div>
+        </div>
+        <div class="reply-date">${fmtDate(r.receivedAt)}</div>
+      </div>
+      <div class="reply-preview">${esc(r.preview)}</div>
+      <div class="reply-actions">
+        <button class="btn btn-accent" style="font-size:12px;padding:6px 14px;" onclick="composeReply('${r.id}')">↗ Reply in Gmail</button>
+        <button class="btn btn-ghost" style="font-size:12px;padding:6px 14px;" onclick="dismissReply('${r.id}')">Dismiss</button>
+      </div>
+    </div>
+  `).join('')}</div>`;
+  document.getElementById('badge-replies').textContent = replies.length;
+}
+
+// ── STATS ──
+function updateStats() {
+  const t1 = leads.filter(l => l.tier === 1).length;
+  const t2 = leads.filter(l => l.tier === 2).length;
+  const sel = leads.filter(l => l.checked).length;
+  document.getElementById('stat-total').textContent = leads.length;
+  document.getElementById('stat-t1').textContent = t1;
+  document.getElementById('stat-t2').textContent = t2;
+  document.getElementById('stat-selected').textContent = sel;
+  document.getElementById('stat-sent-today').textContent = sentTodayCount;
+  document.getElementById('badge-queue').textContent = leads.filter(l => l.status === 'pending').length;
+  document.getElementById('badge-sent').textContent = sentLeads.length + leads.filter(l => l.status !== 'pending').length;
+  document.getElementById('badge-replies').textContent = replies.length;
+  const bulkBar = document.getElementById('bulk-bar');
+  bulkBar.classList.toggle('visible', sel > 0);
+  document.getElementById('bulk-count').textContent = sel;
+}
+
+// ── INTERACTIONS ──
+function toggleCheck(id, cb) {
+  const lead = leads.find(l => l.id === id);
+  if (lead) { lead.checked = cb.checked; }
+  const row = document.getElementById('row-' + id);
+  if (row) row.classList.toggle('selected', cb.checked);
+  updateStats();
+}
+
+function toggleSelectAll(cb) {
+  const filtered = getFilteredLeads();
+  filtered.forEach(l => { l.checked = cb.checked; });
+  renderQueue();
+}
+
+function selectAll() {
+  leads.forEach(l => { if (l.status === 'pending') l.checked = true; });
+  document.getElementById('select-all-cb').checked = true;
+  renderQueue();
+}
+
+function deselectAll() {
+  leads.forEach(l => { l.checked = false; });
+  document.getElementById('select-all-cb').checked = false;
+  renderQueue();
+}
+
+function updateAudit(id, el) {
+  const lead = leads.find(l => l.id === id);
+  if (lead) lead.auditMessage = el.value;
+}
+
+function updateCharCount(id) {
+  const el = document.getElementById('audit-' + id);
+  const cc = document.getElementById('cc-' + id);
+  if (el && cc) cc.textContent = el.value.length;
+}
+
+function skipLead(id) {
+  leads = leads.filter(l => l.id !== id);
+  renderQueue();
+  updateStats();
+}
+
+function markReplied(id) {
+  const lead = leads.find(l => l.id === id) || sentLeads.find(l => l.id === id);
+  if (lead) lead.status = 'replied';
+  renderSent();
+  renderReplies();
+}
+
+// ── SEND ──
+async function sendSingle(id) {
+  const lead = leads.find(l => l.id === id);
+  if (!lead) return;
+  if (!lead.auditMessage || lead.auditMessage.trim().length < 20) {
+    toast('Audit message is too short — add content before sending', 'error'); return;
+  }
+  const webhookUrl = config.sendWebhook || document.getElementById('webhook-url-input').value.trim();
+  if (!webhookUrl) {
+    toast('Set your n8n webhook URL in Config first', 'error'); return;
+  }
+  const btn = document.getElementById('sendbtn-' + id);
+  if (btn) { btn.innerHTML = '<span class="spin">⟳</span>'; btn.disabled = true; }
+  try {
+    const res = await fetch(webhookUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        leadId: lead.id,
+        name: lead.name,
+        company: lead.company,
+        email: lead.email,
+        auditMessage: lead.auditMessage,
+        fromEmail: config.fromEmail,
+        score: lead.score,
+        tier: lead.tier
+      })
+    });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    lead.status = 'sent';
+    lead.sentAt = new Date().toISOString();
+    lead.checked = false;
+    sentTodayCount++;
+    toast(`Sent to ${lead.name} at ${lead.company}`, 'success');
+    renderAll();
+  } catch(e) {
+    toast('Send failed: ' + e.message, 'error');
+    if (btn) { btn.innerHTML = '↗ Retry'; btn.disabled = false; }
+  }
+}
+
+async function sendSelected() {
+  const selected = leads.filter(l => l.checked && l.status === 'pending');
+  if (!selected.length) { toast('No pending leads selected', 'error'); return; }
+  const bad = selected.filter(l => !l.auditMessage || l.auditMessage.trim().length < 20);
+  if (bad.length) { toast(`${bad.length} lead(s) have empty audit messages`, 'error'); return; }
+  const webhookUrl = config.sendWebhook || document.getElementById('webhook-url-input').value.trim();
+  if (!webhookUrl) { toast('Set your n8n webhook URL in Config first', 'error'); return; }
+  const btn = document.getElementById('bulk-send-btn');
+  btn.innerHTML = '<span class="spin">⟳</span> Sending...';
+  btn.disabled = true;
+  let ok = 0; let fail = 0;
+  for (const lead of selected) {
+    await delay(config.delay);
+    try {
+      const res = await fetch(webhookUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ leadId: lead.id, name: lead.name, company: lead.company, email: lead.email, auditMessage: lead.auditMessage, fromEmail: config.fromEmail, score: lead.score, tier: lead.tier })
+      });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      lead.status = 'sent'; lead.sentAt = new Date().toISOString(); lead.checked = false;
+      sentTodayCount++; ok++;
+    } catch(e) { fail++; }
+  }
+  btn.innerHTML = '↗ Send selected'; btn.disabled = false;
+  toast(`Sent ${ok}${fail ? ', ' + fail + ' failed' : ''}`, ok > 0 ? 'success' : 'error');
+  renderAll();
+}
+
+// ── REPLIES POLLING ──
+function startPolling() {
+  if (pollTimer) clearInterval(pollTimer);
+  if (!config.repliesWebhook) return;
+  pollTimer = setInterval(pollReplies, config.pollInterval * 1000);
+}
+
+async function pollReplies() {
+  if (!config.repliesWebhook) return;
+  try {
+    const res = await fetch(config.repliesWebhook);
+    if (!res.ok) return;
+    const data = await res.json();
+    if (Array.isArray(data) && data.length) {
+      const existingIds = new Set(replies.map(r => r.id));
+      const newReplies = data.filter(r => !existingIds.has(r.id));
+      if (newReplies.length) {
+        replies = [...newReplies, ...replies];
+        renderReplies();
+        toast(`${newReplies.length} new repl${newReplies.length > 1 ? 'ies' : 'y'}`, 'success');
+      }
+    }
+  } catch(e) {}
+}
+
+function composeReply(id) {
+  const r = replies.find(x => x.id === id);
+  if (!r) return;
+  window.open('https://mail.google.com/mail/?view=cm&to=' + encodeURIComponent(r.email), '_blank');
+}
+
+function dismissReply(id) {
+  replies = replies.filter(r => r.id !== id);
+  renderReplies();
+}
+
+// ── IMPORT ──
+function importJSON() {
+  const raw = document.getElementById('json-import-area').value.trim();
+  if (!raw) { toast('Paste JSON first', 'error'); return; }
+  try {
+    const parsed = JSON.parse(raw);
+    const arr = Array.isArray(parsed) ? parsed : [parsed];
+    const mapped = arr.map(item => ({
+      id: item.id || uid(),
+      name: item.name || item.ceoName || '',
+      company: item.company || item.companyName || '',
+      email: item.email || item.ceoEmail || '',
+      score: parseInt(item.score || item.icpScore) || 8,
+      tier: parseInt(item.tier || item.icpTier) || 1,
+      employees: parseInt(item.employees || item.headcount) || 0,
+      linkedinUrl: item.linkedinUrl || item.ceoLinkedin || '',
+      auditMessage: item.auditMessage || item.pocSummary || item.researchSummary || '',
+      status: item.status || 'pending',
+      checked: false
+    })).filter(l => l.name && l.email);
+    if (!mapped.length) throw new Error('No valid leads found');
+    leads = [...leads, ...mapped];
+    renderAll();
+    toggleConfig();
+    document.getElementById('json-import-area').value = '';
+    toast(`Imported ${mapped.length} leads`, 'success');
+  } catch(e) {
+    toast('JSON parse error: ' + e.message, 'error');
+  }
+}
+
+function importFromClipboard() {
+  navigator.clipboard.readText().then(text => {
+    document.getElementById('json-import-area').value = text;
+    toggleConfig();
+  }).catch(() => { toggleConfig(); toast('Open Config to paste JSON', ''); });
+}
+
+// ── UTILS ──
+function uid() { return Math.random().toString(36).slice(2, 10); }
+function esc(str) { if (!str) return ''; const d = document.createElement('div'); d.appendChild(document.createTextNode(str)); return d.innerHTML; }
+function delay(ms) { return new Promise(r => setTimeout(r, ms)); }
+function fmtDate(iso) {
+  const d = new Date(iso);
+  return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }) + ' ' + d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+}
+
+function toast(msg, type) {
+  const c = document.getElementById('toast-container');
+  const t = document.createElement('div');
+  t.className = 'toast ' + (type || '');
+  const icons = { success: '✓', error: '✕', '': 'ℹ' };
+  t.innerHTML = `<span class="toast-icon">${icons[type] || 'ℹ'}</span><span>${msg}</span>`;
+  c.appendChild(t);
+  setTimeout(() => { t.style.opacity = '0'; t.style.transition = 'opacity 0.3s'; setTimeout(() => t.remove(), 300); }, 3000);
+}
+</script>
+</body>
+</html>
