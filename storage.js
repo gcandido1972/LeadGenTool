@@ -7,10 +7,10 @@
 const PROJECT_ID = process.env.FIREBASE_PROJECT_ID || 'devgurucatdb';
 const BUCKET     = process.env.FIREBASE_STORAGE_BUCKET || `${PROJECT_ID}.appspot.com`;
 
-// API endpoints — same for both bucket formats
-const UPLOAD_URL  = `https://storage.googleapis.com/upload/storage/v1/b/${BUCKET}/o`;
-const OBJECTS_URL = `https://storage.googleapis.com/storage/v1/b/${BUCKET}/o`;
-const PUBLIC_BASE = `https://storage.googleapis.com/${BUCKET}`;
+// API endpoints
+const UPLOAD_URL    = `https://storage.googleapis.com/upload/storage/v1/b/${BUCKET}/o`;
+const OBJECTS_URL   = `https://storage.googleapis.com/storage/v1/b/${BUCKET}/o`;
+const FIREBASE_BASE = `https://firebasestorage.googleapis.com/v0/b/${BUCKET}/o`;
 
 // ── Auth ──────────────────────────────────────────────────────
 let cachedToken = null;
@@ -84,10 +84,8 @@ export async function uploadPdf(pdfBuffer, filename) {
   const uploadData = await uploadRes.json();
   console.log(`   → Upload OK: ${uploadData.name}`);
 
-  // Make file publicly readable by patching IAM
-  await setPublicRead(token, encodedPath);
-
-  // Firebase Storage public URL — works with storage rules allow read: if true
+  // Public access handled by Firebase Storage rules (allow read: if true)
+  // Firebase Storage public URL:
   const encodedForUrl = encodeURIComponent(storagePath);
   const downloadUrl   = `${FIREBASE_BASE}/${encodedForUrl}?alt=media`;
 
