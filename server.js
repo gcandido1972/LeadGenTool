@@ -1,5 +1,4 @@
 import express from 'express';
-import nodemailer from 'nodemailer';
 import Anthropic from '@anthropic-ai/sdk';
 import { generateBriefPdf } from './briefTemplate.js';
 import { parseClayFields } from './parseFields.js';
@@ -27,19 +26,15 @@ app.use(express.urlencoded({ extended: true, limit: '2mb' }));
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 // ── TEST MODE ─────────────────────────────────────────────────
-// Set TEST_MODE=true in Railway Variables to redirect ALL emails
-// to TEST_EMAIL instead of the actual lead. Safe to run from Clay.
 const TEST_MODE  = process.env.TEST_MODE === 'true';
 const TEST_EMAIL = process.env.TEST_EMAIL || 'gianni@candido.org';
 
-if (TEST_MODE) {
-  console.log(`⚠️  TEST MODE ON — all emails → ${TEST_EMAIL}`);
-}
+if (TEST_MODE) console.log(`⚠️  TEST MODE ON — all emails → ${TEST_EMAIL}`);
 
 // ── Health check ──────────────────────────────────────────────
 app.get('/', (req, res) => res.json({
   status:    'Omega Praxis webhook live',
-  version:   '2.0',
+  version:   '2.2',
   testMode:  TEST_MODE,
   testEmail: TEST_MODE ? TEST_EMAIL : null
 }));
@@ -51,7 +46,7 @@ app.get('/dashboard', (req, res) => {
     res.setHeader('Content-Type', 'text/html');
     res.send(html);
   } catch {
-    res.status(404).send('dashboard.html not found in project root.');
+    res.status(404).send('dashboard.html not found.');
   }
 });
 
@@ -61,42 +56,42 @@ app.post('/growth-report', async (req, res) => {
   console.log('▶ Incoming from Clay:', JSON.stringify(raw, null, 2));
 
   const data = parseClayFields(raw);
-
   if (!data.email) {
     console.error('✗ Missing email');
     return res.status(400).json({ error: 'email is required' });
   }
 
-  // In test mode, redirect to test inbox and flag it in the subject
   const recipientEmail = TEST_MODE ? TEST_EMAIL : data.email;
   const testPrefix     = TEST_MODE ? '[TEST] ' : '';
 
   try {
-    console.log(`◆ Generating email copy for ${data.ceoName} / ${data.company}...`);
+    console.log(`◆ Step 1/3 — Generating email copy for ${data.ceoName} / ${data.company}...`);
     const emailCopy = await generateEmailCopy(data);
+    console.log('✓ Email copy generated');
 
-    console.log('◆ Generating PDF brief...');
+    console.log('◆ Step 2/3 — Generating PDF brief...');
     const pdfBuffer = await generateBriefPdf(data);
+    console.log(`✓ PDF generated — ${pdfBuffer.length} bytes`);
 
-    console.log(`◆ Sending to ${recipientEmail}${TEST_MODE ? ` (redirected from ${data.email})` : ''}...`);
+    console.log(`◆ Step 3/3 — Sending via Resend API to ${recipientEmail}...`);
     await sendEmail(data, emailCopy, pdfBuffer, recipientEmail, testPrefix);
+    console.log('✓ Email sent successfully');
 
-    console.log(`✓ Done`);
     res.json({
-      success:      true,
-      recipient:    recipientEmail,
+      success:       true,
+      recipient:     recipientEmail,
       originalEmail: data.email,
-      company:      data.company,
-      testMode:     TEST_MODE
+      company:       data.company,
+      testMode:      TEST_MODE
     });
 
   } catch (err) {
-    console.error('✗ Error:', err);
+    console.error('✗ Error:', err.message);
     res.status(500).json({ error: err.message });
   }
 });
 
-// ── /test endpoint — fire a test with fake data, no Clay needed ──
+// ── /test — fire full pipeline with sample data ───────────────
 app.get('/test', async (req, res) => {
   console.log('▶ Manual test triggered');
 
@@ -106,51 +101,38 @@ app.get('/test', async (req, res) => {
     poc_brief:          'COMPANY: Cacheflow\nDOMAIN: getcacheflow.com\nCEO NAME: John Gengarella\nCEO LINKEDIN: https://linkedin.com/in/johngengarella',
     poc_strategic:      'Branding_VP: Integrated CPQ billing platform for SaaS\nBranding_clarity: Generic\nBranding_gap: No clear customer-facing value proposition\nMarketing_content: LinkedIn presence only\nMarketing_gap: No blog, newsletter or case studies\nSales_funnel: Self-serve\nSales_gap: No enterprise sales motion visible\nPartnerships_existing: None confirmed\nPartnership_gap: Missing obvious HubSpot ecosystem integrations',
     ceo_pain_points:    'Topic: scaling revenue post-acquisition\nRelevance: High',
-    linkedin_summary:   'John posts regularly about enterprise AI, robotics, and the operational scaling of startups. His feed shows active involvement in product launches, hiring, and sales tax compliance challenges during rapid expansion.',
+    linkedin_summary:   'John posts regularly about enterprise AI and the operational scaling of startups. His feed shows active involvement in product launches, hiring, and sales tax compliance challenges during rapid expansion.',
     founder_challenges: 'Scaling GTM post-acquisition, maintaining product velocity'
   });
 
-  const recipientEmail = TEST_EMAIL;
-
   try {
-    console.log('◆ Generating email copy...');
+    console.log('◆ Step 1/3 — Generating email copy...');
     const emailCopy = await generateEmailCopy(data);
+    console.log('✓ Email copy done');
 
-    console.log('◆ Generating PDF...');
+    console.log('◆ Step 2/3 — Generating PDF...');
     const pdfBuffer = await generateBriefPdf(data);
+    console.log(`✓ PDF done — ${pdfBuffer.length} bytes`);
 
-    console.log(`◆ Sending test email to ${recipientEmail}...`);
-    await sendEmail(data, emailCopy, pdfBuffer, recipientEmail, '[TEST] ');
+    console.log(`◆ Step 3/3 — Sending to ${TEST_EMAIL} via Resend API...`);
+    await sendEmail(data, emailCopy, pdfBuffer, TEST_EMAIL, '[TEST] ');
+    console.log('✓ Test email sent');
 
-    console.log('✓ Test complete');
     res.json({
-      success:   true,
-      recipient: recipientEmail,
-      company:   data.company,
+      success:      true,
+      recipient:    TEST_EMAIL,
+      company:      data.company,
+      pdfBytes:     pdfBuffer.length,
       emailPreview: emailCopy
     });
 
   } catch (err) {
-    console.error('✗ Test error:', err);
+    console.error('✗ Test error:', err.message);
     res.status(500).json({ error: err.message });
   }
 });
 
-// ── /preview-pdf — renders PDF in browser from POST data ─────
-app.post('/preview-pdf', async (req, res) => {
-  const raw = { ...req.query, ...req.body };
-  const data = parseClayFields(raw);
-  try {
-    const pdfBuffer = await generateBriefPdf(data);
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', 'inline; filename="preview.pdf"');
-    res.send(pdfBuffer);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// ── Claude: email copy ────────────────────────────────────────
+// ── Claude: generate email copy ───────────────────────────────
 async function generateEmailCopy(data) {
   const msg = await anthropic.messages.create({
     model: 'claude-sonnet-4-5',
@@ -178,28 +160,50 @@ Rules:
   return msg.content[0].text;
 }
 
-// ── Nodemailer ────────────────────────────────────────────────
+// ── Resend HTTP API — no SMTP ports needed ────────────────────
 async function sendEmail(data, emailBody, pdfBuffer, recipientEmail, subjectPrefix = '') {
-  const transporter = nodemailer.createTransport({
-    host:   process.env.SMTP_HOST,
-    port:   parseInt(process.env.SMTP_PORT || '587'),
-    secure: process.env.SMTP_SECURE === 'true',
-    auth: {
-      user: process.env.SMTP_USER,
-      pass: process.env.SMTP_PASS
-    }
+  const apiKey = process.env.RESEND_API_KEY;
+  if (!apiKey) throw new Error('RESEND_API_KEY is not set in environment variables');
+
+  const fromEmail = process.env.SMTP_FROM || 'contact@omegapraxis.com';
+  const filename  = `Omega-Praxis-Growth-Brief-${data.company.replace(/[^a-z0-9]/gi, '-')}.pdf`;
+  const subject   = `${subjectPrefix}Growth brief for ${data.company} — Omega Praxis`;
+
+  // Resend requires base64-encoded attachments
+  const pdfBase64 = pdfBuffer.toString('base64');
+
+  const payload = {
+    from:        `Gianni Candido | Omega Praxis <${fromEmail}>`,
+    to:          [recipientEmail],
+    reply_to:    fromEmail,
+    subject,
+    text:        emailBody,
+    attachments: [{
+      filename,
+      content: pdfBase64
+    }]
+  };
+
+  console.log(`   → Calling Resend API (to: ${recipientEmail}, subject: ${subject})`);
+
+  const res = await fetch('https://api.resend.com/emails', {
+    method:  'POST',
+    headers: {
+      'Authorization': `Bearer ${apiKey}`,
+      'Content-Type':  'application/json'
+    },
+    body: JSON.stringify(payload)
   });
 
-  const filename = `Omega-Praxis-Growth-Brief-${data.company.replace(/[^a-z0-9]/gi, '-')}.pdf`;
+  const result = await res.json();
 
-  await transporter.sendMail({
-    from:    `"Gianni Candido | Omega Praxis" <${process.env.SMTP_FROM || process.env.SMTP_USER}>`,
-    replyTo: process.env.SMTP_FROM || process.env.SMTP_USER,
-    to:      recipientEmail,
-    subject: `${subjectPrefix}Growth brief for ${data.company} — Omega Praxis`,
-    text:    emailBody,
-    attachments: [{ filename, content: pdfBuffer, contentType: 'application/pdf' }]
-  });
+  if (!res.ok) {
+    console.error('✗ Resend API error:', JSON.stringify(result));
+    throw new Error(`Resend error: ${result.message || JSON.stringify(result)}`);
+  }
+
+  console.log(`   → Resend response: ${JSON.stringify(result)}`);
+  return result;
 }
 
 const PORT = process.env.PORT || 3000;
