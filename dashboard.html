@@ -1388,35 +1388,51 @@ function switchImportTab(tab) {
 }
 
 // ── CSV PARSER ──
-// Handles quoted fields, embedded commas, and escaped double-quotes
+// Full RFC 4180 parser — handles multiline quoted fields (Clay exports use these heavily)
 function parseCSV(text) {
   // Normalise line endings
-  const lines = text.trim().replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
-  if (lines.length < 2) return { headers: [], rows: [] };
+  text = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  if (!text.trim()) return { headers: [], rows: [] };
 
-  function parseLine(line) {
-    const fields = [];
-    let cur = '', inQ = false, i = 0;
-    while (i < line.length) {
-      const ch = line[i];
-      if (ch === '"') {
-        if (inQ && line[i + 1] === '"') { cur += '"'; i += 2; continue; }
-        inQ = !inQ; i++; continue;
+  // Tokenise character by character — the only correct way for multiline quoted fields
+  function tokenise(str) {
+    const records = [];
+    let record = [], field = '', inQuote = false, i = 0;
+    while (i < str.length) {
+      const ch = str[i];
+      if (inQuote) {
+        if (ch === '"') {
+          if (str[i + 1] === '"') { field += '"'; i += 2; continue; } // escaped quote
+          inQuote = false; i++; continue;                              // closing quote
+        }
+        field += ch; i++; continue;                                    // content inside quotes
       }
-      if (ch === ',' && !inQ) { fields.push(cur); cur = ''; i++; continue; }
-      cur += ch; i++;
+      // Not in quote:
+      if (ch === '"') { inQuote = true; i++; continue; }
+      if (ch === ',') { record.push(field); field = ''; i++; continue; }
+      if (ch === '\n') {
+        record.push(field); field = '';
+        records.push(record); record = [];
+        i++; continue;
+      }
+      field += ch; i++;
     }
-    fields.push(cur);
-    return fields.map(f => f.trim().replace(/^"|"$/g, ''));
+    // Push last field and record
+    if (field || record.length) { record.push(field); records.push(record); }
+    return records;
   }
 
-  const headers = parseLine(lines[0]);
+  const records = tokenise(text);
+  if (records.length < 2) return { headers: [], rows: [] };
+
+  const headers = records[0].map(h => h.trim());
   const rows = [];
-  for (let i = 1; i < lines.length; i++) {
-    if (!lines[i].trim()) continue;
-    const vals = parseLine(lines[i]);
+  for (let i = 1; i < records.length; i++) {
+    const vals = records[i];
+    // Skip completely empty rows
+    if (vals.every(v => !v.trim())) continue;
     const obj = {};
-    headers.forEach((h, idx) => { obj[h] = vals[idx] || ''; });
+    headers.forEach((h, idx) => { obj[h] = (vals[idx] || '').trim(); });
     rows.push(obj);
   }
   return { headers, rows };
