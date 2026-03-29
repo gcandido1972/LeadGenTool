@@ -61,8 +61,10 @@ app.post('/growth-report', async (req, res) => {
     return res.status(400).json({ error: 'email is required' });
   }
 
-  const recipientEmail = TEST_MODE ? TEST_EMAIL : data.email;
-  const testPrefix     = TEST_MODE ? '[TEST] ' : '';
+  // _testOverride: dashboard "Test" button always sends to TEST_EMAIL
+  const isTest         = TEST_MODE || raw._testOverride === true || raw._testOverride === 'true';
+  const recipientEmail = isTest ? TEST_EMAIL : data.email;
+  const testPrefix     = isTest ? '[TEST] ' : '';
 
   try {
     console.log(`◆ Step 1/3 — Generating email copy for ${data.ceoName} / ${data.company}...`);

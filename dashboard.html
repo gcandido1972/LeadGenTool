@@ -513,6 +513,15 @@
 
   .btn-sm-skip:hover { border-color: var(--border-hover); color: var(--danger); }
 
+  .btn-sm-test {
+    background: transparent;
+    border-color: rgba(107,174,232,0.3);
+    color: var(--info);
+  }
+
+  .btn-sm-test:hover { background: var(--info-dim); }
+  .btn-sm-test:disabled { opacity: 0.35; cursor: not-allowed; }
+
   .spin {
     display: inline-block;
     animation: spin 0.8s linear infinite;
@@ -1041,9 +1050,10 @@ function renderQueue() {
       </td>
       <td>
         <div class="actions">
-          <button class="btn-sm btn-sm-send" id="sendbtn-${l.id}" onclick="sendSingle('${l.id}')" ${l.status !== 'pending' ? 'disabled' : ''} title="${l.status !== 'pending' ? 'Already sent' : 'Send audit email'}">
+          <button class="btn-sm btn-sm-send" id="sendbtn-${l.id}" onclick="sendSingle('${l.id}')" ${l.status !== 'pending' ? 'disabled' : ''} title="${l.status !== 'pending' ? 'Already sent' : 'Send to lead'}">
             ${l.status === 'pending' ? '↗ Send' : '✓ Sent'}
           </button>
+          <button class="btn-sm btn-sm-test" id="testbtn-${l.id}" onclick="sendTest('${l.id}')" title="Send to gianni@candido.org for review">⚗ Test</button>
           <button class="btn-sm btn-sm-skip" onclick="skipLead('${l.id}')" title="Remove from queue">✕</button>
         </div>
       </td>
@@ -1174,7 +1184,7 @@ async function sendSingle(id) {
   }
   const webhookUrl = config.sendWebhook || document.getElementById('webhook-url-input').value.trim();
   if (!webhookUrl) {
-    toast('Set your n8n webhook URL in Config first', 'error'); return;
+    toast('Set your Railway URL in Config first', 'error'); return;
   }
   const btn = document.getElementById('sendbtn-' + id);
   if (btn) { btn.innerHTML = '<span class="spin">⟳</span>'; btn.disabled = true; }
@@ -1183,14 +1193,17 @@ async function sendSingle(id) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        leadId: lead.id,
-        name: lead.name,
-        company: lead.company,
-        email: lead.email,
-        auditMessage: lead.auditMessage,
-        fromEmail: config.fromEmail,
-        score: lead.score,
-        tier: lead.tier
+        leadId:             lead.id,
+        company:            lead.company,
+        email:              lead.email,
+        ceo_name:           lead.name,
+        poc_brief:          lead.pocBrief          || '',
+        poc_strategic:      lead.pocStrategic      || '',
+        ceo_pain_points:    lead.ceoPainPoints     || '',
+        linkedin_summary:   lead.linkedinSummary   || '',
+        founder_challenges: lead.founderChallenges || '',
+        score:              lead.score,
+        tier:               lead.tier
       })
     });
     if (!res.ok) throw new Error('HTTP ' + res.status);
@@ -1212,7 +1225,7 @@ async function sendSelected() {
   const bad = selected.filter(l => !l.auditMessage || l.auditMessage.trim().length < 20);
   if (bad.length) { toast(`${bad.length} lead(s) have empty audit messages`, 'error'); return; }
   const webhookUrl = config.sendWebhook || document.getElementById('webhook-url-input').value.trim();
-  if (!webhookUrl) { toast('Set your n8n webhook URL in Config first', 'error'); return; }
+  if (!webhookUrl) { toast('Set your Railway URL in Config first', 'error'); return; }
   const btn = document.getElementById('bulk-send-btn');
   btn.innerHTML = '<span class="spin">⟳</span> Sending...';
   btn.disabled = true;
@@ -1223,7 +1236,7 @@ async function sendSelected() {
       const res = await fetch(webhookUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ leadId: lead.id, name: lead.name, company: lead.company, email: lead.email, auditMessage: lead.auditMessage, fromEmail: config.fromEmail, score: lead.score, tier: lead.tier })
+        body: JSON.stringify({ leadId: lead.id, company: lead.company, email: lead.email, ceo_name: lead.name, poc_brief: lead.pocBrief || '', poc_strategic: lead.pocStrategic || '', ceo_pain_points: lead.ceoPainPoints || '', linkedin_summary: lead.linkedinSummary || '', founder_challenges: lead.founderChallenges || '', score: lead.score, tier: lead.tier })
       });
       if (!res.ok) throw new Error('HTTP ' + res.status);
       lead.status = 'sent'; lead.sentAt = new Date().toISOString(); lead.checked = false;
@@ -1233,6 +1246,44 @@ async function sendSelected() {
   btn.innerHTML = '↗ Send selected'; btn.disabled = false;
   toast(`Sent ${ok}${fail ? ', ' + fail + ' failed' : ''}`, ok > 0 ? 'success' : 'error');
   renderAll();
+}
+
+// ── SEND TEST — fires to gianni@candido.org regardless of TEST_MODE ──
+async function sendTest(id) {
+  const lead = leads.find(l => l.id === id);
+  if (!lead) return;
+  const webhookUrl = config.sendWebhook || document.getElementById('webhook-url-input').value.trim();
+  if (!webhookUrl) { toast('Set your Railway URL in Config first', 'error'); return; }
+
+  const btn = document.getElementById('testbtn-' + id);
+  if (btn) { btn.innerHTML = '<span class="spin">⟳</span>'; btn.disabled = true; }
+
+  try {
+    const res = await fetch(webhookUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        leadId:             lead.id,
+        company:            lead.company,
+        email:              'gianni@candido.org',
+        ceo_name:           lead.name,
+        poc_brief:          lead.pocBrief          || '',
+        poc_strategic:      lead.pocStrategic      || '',
+        ceo_pain_points:    lead.ceoPainPoints     || '',
+        linkedin_summary:   lead.linkedinSummary   || '',
+        founder_challenges: lead.founderChallenges || '',
+        score:              lead.score,
+        tier:               lead.tier,
+        _testOverride:      true
+      })
+    });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    toast(`Test sent to gianni@candido.org for ${lead.company}`, 'success');
+  } catch(e) {
+    toast('Test send failed: ' + e.message, 'error');
+  } finally {
+    if (btn) { btn.innerHTML = '⚗ Test'; btn.disabled = false; }
+  }
 }
 
 // ── REPLIES POLLING ──
@@ -1279,17 +1330,22 @@ function importJSON() {
     const parsed = JSON.parse(raw);
     const arr = Array.isArray(parsed) ? parsed : [parsed];
     const mapped = arr.map(item => ({
-      id: item.id || uid(),
-      name: item.name || item.ceoName || '',
-      company: item.company || item.companyName || '',
-      email: item.email || item.ceoEmail || '',
-      score: parseInt(item.score || item.icpScore) || 8,
-      tier: parseInt(item.tier || item.icpTier) || 1,
-      employees: parseInt(item.employees || item.headcount) || 0,
-      linkedinUrl: item.linkedinUrl || item.ceoLinkedin || '',
-      auditMessage: item.auditMessage || item.pocSummary || item.researchSummary || '',
-      status: item.status || 'pending',
-      checked: false
+      id:                 item.id || uid(),
+      name:               item.name || item.ceoName || item.ceo_name || '',
+      company:            item.company || item.companyName || '',
+      email:              item.email || item.ceoEmail || item.ceo_email || '',
+      score:              parseInt(item.score || item.icpScore) || 8,
+      tier:               parseInt(item.tier || item.icpTier) || 1,
+      employees:          parseInt(item.employees || item.headcount) || 0,
+      linkedinUrl:        item.linkedinUrl || item.ceoLinkedin || item.linkedin_url || '',
+      pocBrief:           item.pocBrief || item.poc_brief || '',
+      pocStrategic:       item.pocStrategic || item.poc_strategic || '',
+      ceoPainPoints:      item.ceoPainPoints || item.ceo_pain_points || '',
+      linkedinSummary:    item.linkedinSummary || item.linkedin_summary || '',
+      founderChallenges:  item.founderChallenges || item.founder_challenges || '',
+      auditMessage:       item.auditMessage || item.pocSummary || item.researchSummary || '',
+      status:             item.status || 'pending',
+      checked:            false
     })).filter(l => l.name && l.email);
     if (!mapped.length) throw new Error('No valid leads found');
     leads = [...leads, ...mapped];
